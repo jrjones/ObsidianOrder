@@ -20,6 +20,8 @@ let package = Package(
         // Markdown parsing for content
         // Using main branch until a stable release is tagged
         .package(url: "https://github.com/apple/swift-markdown.git", branch: "main"),
+        // SQLite support for VaultIndex
+        .package(url: "https://github.com/stephencelis/SQLite.swift.git", from: "0.13.3"),
     ],
     targets: [
         // Core parsing model: front-matter, links, tasks
@@ -45,6 +47,21 @@ let package = Package(
             name: "ObsidianModelTests",
             dependencies: ["ObsidianModel"],
             path: "Tests/ObsidianModelTests"
+        ),
+        // Vault indexer: scans vault and populates SQLite schema
+        .target(
+            name: "VaultIndex",
+            dependencies: [
+                "ObsidianModel",
+                .product(name: "SQLite", package: "SQLite.swift"),
+            ],
+            path: "Sources/VaultIndex"
+        ),
+        // Tests for VaultIndex scanning
+        .testTarget(
+            name: "VaultIndexTests",
+            dependencies: ["VaultIndex"],
+            path: "Tests/VaultIndexTests"
         ),
     ]
 )

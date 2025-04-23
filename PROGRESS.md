@@ -14,7 +14,7 @@
     - [x] Add unit tests for links
     - [x] Add unit tests for tasks
  - [ ] 3. Vault Indexer
-     - Build `VaultIndex` crawler & SQLite schema
+     - [x] Build `VaultIndex` crawler & SQLite schema
      - Support full and incremental scans with `--since`
      - Implement diffing logic for updated files
  - [ ] 4. Query Engine & Reporting
@@ -23,7 +23,7 @@
  - [ ] 5. GraphClient Calendar Integration
      - Stub `GraphClient` with OAuth/MSAL
      - Fetch events for `agenda` command
- - [ ] 6. CLI Entrypoints
+ - [x] 6. CLI Entrypoints
      - Wire up commands using Swift Argument Parser
      - Add common flags (`--vault`, `--db`, etc.)
  - [ ] 7. LaunchAgent & Packaging
@@ -45,3 +45,5 @@
  - 2025-04-23: Added `ObsidianModel` library target stub; updated `Package.swift`.
  - 2025-04-24: Implemented front-matter parsing (split + YAML) in ObsidianModel; added FrontMatterTests.
  - 2025-04-24: Added link parsing and task parsing in ObsidianModel; added LinkTests and TaskTests.
+- 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
+- 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
