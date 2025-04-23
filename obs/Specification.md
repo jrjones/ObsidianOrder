@@ -5,11 +5,11 @@ Target: **Swift 6**, Swift-Argument-Parser, **macOS 15.4+******
 
 ## 1. Scope of Phase 1
 
-| **Goal** | **Deliverable** | 
-| ---- | ----  |
-| Zero-touch **index & query** of the vault | Fast SQLite manifest (state.sqlite) updated on demand or by launchd. | 
-| **No file mutations** yet | All operations are read-only previews. | 
-| Run headless on JRJ's always-on desktop Mac | CLI binary (obs) plus sample LaunchAgent plist. | 
+| **Goal**                                      | **Deliverable**                                                       | 
+| --------------------------------------------- | --------------------------------------------------------------------- |
+| Zero-touch **index & query** of the vault     | Fast SQLite manifest (state.sqlite) updated on demand or by launchd.  | 
+| **No file mutations** yet                     | All operations are read-only previews.                                | 
+| Run headless on JRJ's always-on desktop Mac   | CLI binary (obs) plus sample LaunchAgent plist.                       | 
 
 
 ## 2. High-level architecture

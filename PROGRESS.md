@@ -5,12 +5,12 @@
 
 ## Phase 1 Tasks
 
- - [ ] 1. Project Initialization
-     - Ensure Swift workspace builds on macOS 15.4+ (Swift 6)
-     - Verify integration tests with fixture vault
+ - [x] 1. Project Initialization
+     - [x] Ensure Swift workspace builds on macOS 15.4+ (Swift 6)
+     - [ ] Verify integration tests with fixture vault
  - [ ] 2. Core Data Model & Parsing
-     - Implement `ObsidianModel` package
-     - Add unit tests for front‑matter, links, tasks
+     - [x] Implement `ObsidianModel` package (stub target)
+     - [ ] Add unit tests for front‑matter, links, tasks
  - [ ] 3. Vault Indexer
      - Build `VaultIndex` crawler & SQLite schema
      - Support full and incremental scans with `--since`
@@ -39,3 +39,5 @@
 ## Progress Log
 
  - 2025-04-23: Created `PROGRESS.md`; documented and logged Phase 1 plan after user approval.
+ - 2025-04-23: Scaffolded Swift Package Manager support (Package.swift, obsTests); `swift build` passed.
+ - 2025-04-23: Added `ObsidianModel` library target stub; updated `Package.swift`.

@@ -1,0 +1,14 @@
+# Ignore build artifacts and user data
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode user data
+**/xcuserdata/
+*.xcuserdatad/
+
+# macOS
+.DS_Store
+
+# Xcode Derived Data
+DerivedData/
