@@ -40,10 +40,11 @@ let package = Package(
             ],
             path: "obs/obs"
         ),
+        // Tests for ObsidianModel
         .testTarget(
-            name: "obsTests",
-            dependencies: ["obs"],
-            path: "Tests/obsTests"
+            name: "ObsidianModelTests",
+            dependencies: ["ObsidianModel"],
+            path: "Tests/ObsidianModelTests"
         ),
     ]
 )
