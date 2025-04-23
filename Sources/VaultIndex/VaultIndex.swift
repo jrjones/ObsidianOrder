@@ -122,7 +122,8 @@ public enum VaultIndex {
                 let modified = attrs.contentModificationDate?.timeIntervalSince1970 ?? Date().timeIntervalSince1970
                 // Upsert note
                 let noteID: Int64
-                if let existingRow = try db.pluck(notesTable.filter(pathExp == path)), let existingID = existingRow[idExp] {
+                if let existingRow = try db.pluck(notesTable.filter(pathExp == path)) {
+                    let existingID = existingRow[idExp]
                     // Delete old links and tasks
                     try db.run(tasksTable.filter(noteIdExp == existingID).delete())
                     try db.run(linksTable.filter(fromIdExp == existingID).delete())

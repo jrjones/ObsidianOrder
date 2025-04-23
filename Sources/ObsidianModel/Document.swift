@@ -35,17 +35,20 @@ public extension ObsidianModel {
     /// - Parameter text: The complete markdown file contents.
     /// - Returns: Tuple of YAML string and body string, or nil if no front-matter.
     static func split(text: String) -> (yaml: String, body: String)? {
-        let lines = text.components(separatedBy: "\n")
-        guard lines.first == "---" else { return nil }
-        for i in 1..<lines.count {
-            if lines[i] == "---" {
-                let yamlLines = lines[1..<i]
-                let yaml = yamlLines.joined(separator: "\n")
-                let bodyLines = lines[(i + 1)...]
-                let body = bodyLines.joined(separator: "\n")
-                return (yaml, body)
-            }
-        }
-        return nil
+        // Look for YAML front-matter delimited by '---' at the start and end
+        let delimiter = "---\n"
+        // Must start with opening delimiter
+        guard text.hasPrefix(delimiter) else { return nil }
+        // Skip past the opening delimiter
+        let contentStart = text.index(text.startIndex, offsetBy: delimiter.count)
+        let remainder = text[contentStart...]
+        // Find the closing delimiter
+        guard let closeRange = remainder.range(of: delimiter) else { return nil }
+        // Extract YAML between delimiters
+        let yaml = String(remainder[..<closeRange.lowerBound])
+        // Extract body after closing delimiter
+        let bodyStart = closeRange.upperBound
+        let body = String(remainder[bodyStart...])
+        return (yaml: yaml, body: body)
     }
 }
