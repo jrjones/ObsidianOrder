@@ -41,6 +41,10 @@ let package = Package(
                 "ObsidianModel",
                 // Vault indexing
                 "VaultIndex",
+                // Graph client for calendar integration
+                "GraphClient",
+                // SQLite for querying index
+                .product(name: "SQLite", package: "SQLite.swift"),
             ],
             path: "obs/obs"
         ),
@@ -58,6 +62,12 @@ let package = Package(
                 .product(name: "SQLite", package: "SQLite.swift"),
             ],
             path: "Sources/VaultIndex"
+        ),
+        // Calendar integration client (stub)
+        .target(
+            name: "GraphClient",
+            dependencies: [],
+            path: "Sources/GraphClient"
         ),
         // Tests for VaultIndex scanning
         .testTarget(

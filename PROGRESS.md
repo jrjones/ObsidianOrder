@@ -18,9 +18,10 @@
      - [x] Support full and incremental scans with `--since`
      - [x] Implement diffing logic for updated files
  - [ ] 4. Query Engine & Reporting
-     - Create JSON/Markdown emitters for `agenda`, `daily-report`, etc.
-     - Support `--json` flag
- - [ ] 5. GraphClient Calendar Integration
+     - [x] Create JSON/Markdown emitter for `daily-report`
+     - [x] Create JSON/Markdown emitters for `agenda`, `weekly-preview`, etc.
+     - [x] Support `--json` flag for `daily-report`
+- [x] 5. GraphClient Calendar Integration
      - Stub `GraphClient` with OAuth/MSAL
      - Fetch events for `agenda` command
  - [x] 6. CLI Entrypoints
@@ -45,6 +46,6 @@
  - 2025-04-23: Added `ObsidianModel` library target stub; updated `Package.swift`.
  - 2025-04-24: Implemented front-matter parsing (split + YAML) in ObsidianModel; added FrontMatterTests.
  - 2025-04-24: Added link parsing and task parsing in ObsidianModel; added LinkTests and TaskTests.
-+ 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
-+ 2025-04-25: Extended `VaultIndex` for incremental scans (`--since`) and diffing logic (updating changed files, removing deleted).
-+ 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
+- 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
+- 2025-04-25: Extended `VaultIndex` for incremental scans (`--since`) and diffing logic (updating changed files, removing deleted).
+- 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
