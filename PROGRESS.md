@@ -5,9 +5,9 @@
 
 ## Phase 1 Tasks
 
- - [x] 1. Project Initialization
-     - [x] Ensure Swift workspace builds on macOS 15.4+ (Swift 6)
-     - [ ] Verify integration tests with fixture vault
+- [x] 1. Project Initialization
+    - [x] Ensure Swift workspace builds on macOS 15.4+ (Swift 6)
+    - [x] Verify integration tests with fixture vault
 - [x] 2. Core Data Model & Parsing
     - [x] Implement `ObsidianModel` package (stub target)
     - [x] Add unit tests for front‑matter
@@ -27,9 +27,9 @@
  - [x] 6. CLI Entrypoints
      - Wire up commands using Swift Argument Parser
      - Add common flags (`--vault`, `--db`, etc.)
- - [ ] 7. LaunchAgent & Packaging
-     - Add sample LaunchAgent plist (`support/`)
-     - Document build & install instructions
+ - [x] 7. LaunchAgent & Packaging
+     - [x] Add sample LaunchAgent plist (`support/`)
+     - [x] Document build & install instructions
  - [ ] 8. CI & Test Coverage
      - Setup GitHub Actions for macOS runner
      - Add coverage reporting and badge
@@ -46,6 +46,7 @@
  - 2025-04-23: Added `ObsidianModel` library target stub; updated `Package.swift`.
  - 2025-04-24: Implemented front-matter parsing (split + YAML) in ObsidianModel; added FrontMatterTests.
  - 2025-04-24: Added link parsing and task parsing in ObsidianModel; added LinkTests and TaskTests.
-- 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
-- 2025-04-25: Extended `VaultIndex` for incremental scans (`--since`) and diffing logic (updating changed files, removing deleted).
-- 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
+ - 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
+ - 2025-04-25: Extended `VaultIndex` for incremental scans (`--since`) and diffing logic (updating changed files, removing deleted).
+ - 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
+ - 2025-04-26: Added sample LaunchAgent plist under `support/` and created `README.md` with build, usage, and launch agent instructions
