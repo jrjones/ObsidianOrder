@@ -13,10 +13,10 @@
     - [x] Add unit tests for front‑matter
     - [x] Add unit tests for links
     - [x] Add unit tests for tasks
- - [ ] 3. Vault Indexer
+ - [x] 3. Vault Indexer
      - [x] Build `VaultIndex` crawler & SQLite schema
-     - Support full and incremental scans with `--since`
-     - Implement diffing logic for updated files
+     - [x] Support full and incremental scans with `--since`
+     - [x] Implement diffing logic for updated files
  - [ ] 4. Query Engine & Reporting
      - Create JSON/Markdown emitters for `agenda`, `daily-report`, etc.
      - Support `--json` flag
@@ -45,5 +45,6 @@
  - 2025-04-23: Added `ObsidianModel` library target stub; updated `Package.swift`.
  - 2025-04-24: Implemented front-matter parsing (split + YAML) in ObsidianModel; added FrontMatterTests.
  - 2025-04-24: Added link parsing and task parsing in ObsidianModel; added LinkTests and TaskTests.
-- 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
-- 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
++ 2025-04-24: Added `VaultIndex` module with SQLite schema and full-scan support; wrote basic integration test.
++ 2025-04-25: Extended `VaultIndex` for incremental scans (`--since`) and diffing logic (updating changed files, removing deleted).
++ 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.

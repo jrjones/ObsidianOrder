@@ -39,6 +39,8 @@ let package = Package(
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 // Core parsing model
                 "ObsidianModel",
+                // Vault indexing
+                "VaultIndex",
             ],
             path: "obs/obs"
         ),

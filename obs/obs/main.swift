@@ -5,11 +5,9 @@
 //  Created by Joseph R. Jones on 4/23/25.
 //
 
-import Foundation
-
 import ArgumentParser
 import Foundation
-import ObsidianModel
+import VaultIndex
 
 /// Main entrypoint for the `obs` CLI.
 struct Obs: ParsableCommand {
@@ -38,7 +36,17 @@ struct Index: ParsableCommand {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let vaultPath = vault ?? "\(home)/Obsidian"
         let dbPath = db ?? "\(home)/.obsidian-order/state.sqlite"
-        print("[stub] Indexing vault at \(vaultPath) into DB at \(dbPath), since=\(since ?? "<none>")")
+        var sinceDate: Date? = nil
+        if let since = since {
+            let formatter = ISO8601DateFormatter()
+            guard let date = formatter.date(from: since) else {
+                throw ValidationError("Invalid --since datetime: \(since)")
+            }
+            sinceDate = date
+        }
+        print("Indexing vault at \(vaultPath) into DB at \(dbPath) since=\(sinceDate.map { String(describing: $0) } ?? "<none>")...")
+        try VaultIndex.index(vaultPath: vaultPath, dbPath: dbPath, since: sinceDate)
+        print("Index complete.")
     }
 }
 
