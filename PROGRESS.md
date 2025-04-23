@@ -17,7 +17,7 @@
      - [x] Build `VaultIndex` crawler & SQLite schema
      - [x] Support full and incremental scans with `--since`
      - [x] Implement diffing logic for updated files
- - [ ] 4. Query Engine & Reporting
+ - [x] 4. Query Engine & Reporting
      - [x] Create JSON/Markdown emitter for `daily-report`
      - [x] Create JSON/Markdown emitters for `agenda`, `weekly-preview`, etc.
      - [x] Support `--json` flag for `daily-report`
@@ -33,7 +33,7 @@
  - [x] 8. CI & Test Coverage
      - [x] Setup GitHub Actions for macOS runner
      - [x] Add coverage reporting and badge
- - [ ] 9. Phase‑1 Wrap‑up
+ - [x] 9. Phase‑1 Wrap‑up
      - Final review, bump to v0.1.0, tag release
 
  ---
