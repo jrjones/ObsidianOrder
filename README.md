@@ -30,7 +30,7 @@ Defaults: `--vault ~/Obsidian`, `--db ~/.obsidian-order/state.sqlite`.
 ```bash
 .build/release/obs daily-report [--json]
 ```
-
+  
 ### Agenda
 ```bash
 .build/release/obs agenda [--json]
