@@ -30,9 +30,9 @@
  - [x] 7. LaunchAgent & Packaging
      - [x] Add sample LaunchAgent plist (`support/`)
      - [x] Document build & install instructions
- - [ ] 8. CI & Test Coverage
-     - Setup GitHub Actions for macOS runner
-     - Add coverage reporting and badge
+ - [x] 8. CI & Test Coverage
+     - [x] Setup GitHub Actions for macOS runner
+     - [x] Add coverage reporting and badge
  - [ ] 9. Phase‑1 Wrap‑up
      - Final review, bump to v0.1.0, tag release
 
@@ -50,3 +50,4 @@
  - 2025-04-25: Extended `VaultIndex` for incremental scans (`--since`) and diffing logic (updating changed files, removing deleted).
  - 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
  - 2025-04-26: Added sample LaunchAgent plist under `support/` and created `README.md` with build, usage, and launch agent instructions
+ - 2025-04-27: Added GitHub Actions CI workflow with build, test, and Codecov coverage upload
