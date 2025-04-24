@@ -309,6 +309,55 @@ struct Shell: ParsableCommand {
             }
             rows.append(rowVals)
         }
+        // Special-case: queries emitting a 'path' column
+        let lowerNames = colNames.map { $0.lowercased() }
+        // 1-column 'path' -> emit raw obsidian:// URLs
+        if colCount == 1 && lowerNames[0] == "path" {
+            for row in rows {
+                let rawPath = row[0]
+                if let encoded = rawPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+                    print("obsidian://open?path=\(encoded)")
+                } else {
+                    print(rawPath)
+                }
+            }
+            if rowsTruncated {
+                print("-- output truncated at \(maxRows) rows --")
+            }
+            return
+        }
+        // 2-column [*, path] -> bullet list with first field and obsidian:// link
+        if colCount == 2 && lowerNames[1] == "path" {
+            // Determine display width for first field: static 40 for titles, else dynamic
+            let displayWidth: Int
+            if lowerNames[0] == "title" {
+                displayWidth = 40
+            } else {
+                let header0Width = colNames[0].count
+                let max0 = rows.map { $0[0].count }.max() ?? 0
+                displayWidth = max(header0Width, max0)
+            }
+            for row in rows {
+                let field0 = row[0]
+                let rawPath = row[1]
+                let displayField: String
+                if field0.count <= displayWidth {
+                    displayField = field0 + String(repeating: " ", count: displayWidth - field0.count)
+                } else {
+                    displayField = String(field0.prefix(displayWidth - 1)) + "…"
+                }
+                if let encoded = rawPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+                    let uri = "obsidian://open?path=\(encoded)"
+                    print("- \(displayField)  \(uri)")
+                } else {
+                    print("- \(displayField)  (Invalid path URI)")
+                }
+            }
+            if rowsTruncated {
+                print("-- output truncated at \(maxRows) rows --")
+            }
+            return
+        }
         // Compute natural column widths (header vs cell content)
         let sepWidth = 3 // " | "
         let naturalWidths: [Int] = (0..<colCount).map { i in

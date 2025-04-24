@@ -36,23 +36,23 @@ struct Ask: ParsableCommand {
         var stmt = notes.filter(filterExp).limit(top)
 
         // Execute and print results
-        // ANSI hyperlink helper: wraps text as a clickable URI in supporting terminals
-        func hyperlink(_ text: String, uri: String) -> String {
-            let esc = "\u{001B}]8;;\(uri)\u{0007}"
-            let escEnd = "\u{001B}]8;;\u{0007}"
-            return "\(esc)\(text)\(escEnd)"
-        }
+        // Display results: two columns (truncated title, raw Obsidian URI) for URL auto-detection
+        let displayWidth = 40
         var found = 0
         for row in try connection.prepare(stmt) {
             let title = row[titleExp]
             let path = row[pathExp]
-            // Percent-encode path for Obsidians URI
             if let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
                 let uri = "obsidian://open?path=\(encoded)"
-                let link = hyperlink(title, uri: uri)
-                print("- \(link) (\(path))")
+                let displayTitle: String
+                if title.count <= displayWidth {
+                    displayTitle = title + String(repeating: " ", count: displayWidth - title.count)
+                } else {
+                    displayTitle = String(title.prefix(displayWidth - 1)) + "…"
+                }
+                print("- \(displayTitle)  \(uri)")
             } else {
-                print("- \(title) (\(path))")
+                print("- \(title)  (Invalid path URI)")
             }
             found += 1
         }

@@ -168,6 +168,10 @@ obs --help shows new commands grouped under **Explore**.
     - \desc <table> -- schema
     - \ask <query> -- same as CLI ask
     - Raw SQL executes and prints pretty table (50-row cap).
+    - Special output formatting for Obsidian links:
+        - Single-column `path` queries print each row as a raw `obsidian://open?path=…` URL for click-to-open.
+        - Two-column `[*, path]` queries emit a bullet list `- <first field>  <obsidian://open?path=…>` with the first field truncated/padded and the full Obsidian URI.
+    - \\open <id> -- open the note with the given database `id` in Obsidian via the `obsidian://open?path=` URI scheme.
 
 ### 3.2 Daily Summary
 ```shell    

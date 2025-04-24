@@ -75,3 +75,6 @@ _First task will be the REPL._
  - 2025-04-25: Implemented CLI skeleton with Swift Argument Parser, commands, and common flags.
  - 2025-04-26: Added sample LaunchAgent plist under `support/` and created `README.md` with build, usage, and launch agent instructions
  - 2025-04-27: Added GitHub Actions CI workflow with build, test, and Codecov coverage upload
+ - 2025-04-29: Enhanced shell REPL with special-case SQL formatting for clickable Obsidian links (single-column `path` and two-column `[*, path]` queries).
+ - 2025-04-29: Updated `obs ask` to emit two-column bullet lists (truncated title + obsidian:// URL) for clickable note links.
+ - 2025-04-30: Added shell REPL built-in `\\open <id>` to open notes by database ID via the Obsidian URI scheme.
