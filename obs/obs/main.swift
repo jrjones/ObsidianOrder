@@ -11,8 +11,8 @@ struct Obs: ParsableCommand {
         commandName: "obs",
         abstract: "Obsidian Order: headless vault indexer and reporter",
         version: "0.1.0",
-        subcommands: [Index.self, Shell.self, DailyReport.self, WeeklyPreview.self, Agenda.self, Collections.self],
-        defaultSubcommand: nil
+        subcommands: [Index.self, Shell.self, DailyReport.self, WeeklyPreview.self, Agenda.self, Collections.self, Ask.self],
+        defaultSubcommand: Shell.self
     )
     func run() throws {
         // No-op: users must choose a subcommand

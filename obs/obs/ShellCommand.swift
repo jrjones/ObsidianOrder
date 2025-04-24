@@ -17,6 +17,8 @@ struct Shell: ParsableCommand {
 
     @Option(name: .long, help: "Path to SQLite DB (default: ~/.obsidian-order/state.sqlite)")
     var db: String?
+    @Option(name: .long, help: "Maximum number of rows to display (0 = no limit, default: 100)")
+    var rowLimit: Int = 100
 
     func run() throws {
         // Determine home directory
@@ -66,56 +68,184 @@ struct Shell: ParsableCommand {
     }
 
     private func replLoop(dbHandle: OpaquePointer?) {
+        // Switch terminal to raw mode
+        var oldt = termios()
+        tcgetattr(STDIN_FILENO, &oldt)
+        var raw = oldt
+        raw.c_lflag &= ~(UInt(ECHO) | UInt(ICANON))
+        raw.c_cc.2 = 1  // VMIN
+        raw.c_cc.6 = 0  // VTIME
+        tcsetattr(STDIN_FILENO, TCSANOW, &raw)
+        defer { tcsetattr(STDIN_FILENO, TCSANOW, &oldt) }
+
         var buffer = ""
-        while true {
-            // Choose prompt: new stmt or continuation
-            let prompt = buffer.isEmpty ? "obs> " : "...> "
-            print(prompt, terminator: "")
+        var history: [String] = []
+        var historyIndex: Int? = nil
+
+        let promptMain = "obs> "
+        let promptCont = "...> "
+
+        loop: while true {
+            let prompt = buffer.isEmpty ? promptMain : promptCont
+            fputs(prompt, stdout)
             fflush(stdout)
-            guard let line = readLine(strippingNewline: true) else {
-                print("")
-                break
+
+            // Read raw input (handle backspace and arrows)
+            var lineBytes: [UInt8] = []
+            historyIndex = nil
+            rawLoop: while true {
+                var b: UInt8 = 0
+                let n = read(STDIN_FILENO, &b, 1)
+                if n <= 0 {
+                    fputs("\n", stdout)
+                    return
+                }
+                switch b {
+                case 0x0A, 0x0D:
+                    fputs("\n", stdout)
+                    break rawLoop
+                case 0x7F, 0x08:
+                    if !lineBytes.isEmpty {
+                        lineBytes.removeLast()
+                        fputs("\u{8} \u{8}", stdout)
+                        fflush(stdout)
+                    }
+                case 0x1B:
+                    // Arrow key sequence
+                    var seq1: UInt8 = 0, seq2: UInt8 = 0
+                    let m1 = read(STDIN_FILENO, &seq1, 1)
+                    let m2 = read(STDIN_FILENO, &seq2, 1)
+                    guard m1 > 0 && m2 > 0 && seq1 == UInt8(ascii: "[") else { continue }
+                    let promptText = buffer.isEmpty ? promptMain : promptCont
+                    if seq2 == UInt8(ascii: "A") {
+                        // Up arrow
+                        guard !history.isEmpty else { continue }
+                        if historyIndex == nil {
+                            historyIndex = history.count - 1
+                        } else if historyIndex! > 0 {
+                            historyIndex! -= 1
+                        }
+                        let entry = history[historyIndex!]
+                        fputs("\r\u{1B}[2K", stdout)
+                        fputs(promptText, stdout)
+                        fputs(entry, stdout)
+                        fflush(stdout)
+                        lineBytes = Array(entry.utf8)
+                    } else if seq2 == UInt8(ascii: "B") {
+                        // Down arrow
+                        guard !history.isEmpty else { continue }
+                        if let idx = historyIndex {
+                            if idx < history.count - 1 {
+                                historyIndex! += 1
+                                let entry = history[historyIndex!]
+                                fputs("\r\u{1B}[2K", stdout)
+                                fputs(promptText, stdout)
+                                fputs(entry, stdout)
+                                fflush(stdout)
+                                lineBytes = Array(entry.utf8)
+                            } else {
+                                historyIndex = nil
+                                fputs("\r\u{1B}[2K", stdout)
+                                fputs(promptText, stdout)
+                                fflush(stdout)
+                                lineBytes = []
+                            }
+                        }
+                    }
+                default:
+                    lineBytes.append(b)
+                    var c = b
+                    _ = write(STDIN_FILENO, &c, 1)
+                    fflush(stdout)
+                }
             }
+
+            let line = String(decoding: lineBytes, as: UTF8.self)
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            // Skip empty input when no buffer
-            if buffer.isEmpty && trimmed.isEmpty {
-                continue
-            }
-            // Built-in commands (only when no buffer)
+
+            // Built-in commands
             if buffer.isEmpty && trimmed.hasPrefix("\\") {
+                history.append(trimmed)
+                historyIndex = nil
                 let parts = trimmed.split(separator: " ", maxSplits: 1).map(String.init)
-                let cmd = parts[0]
-                let arg = parts.count > 1 ? parts[1] : nil
+                let cmdRaw = parts[0], arg = parts.count > 1 ? parts[1] : nil
+                let cmd = cmdRaw.lowercased()
                 switch cmd {
                 case "\\q", "\\quit":
                     return
                 case "\\tables":
                     runAndPrint(query: "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", dbHandle: dbHandle)
                 case "\\desc":
-                    if let table = arg {
-                        let sql = "PRAGMA table_info(\(table))"
-                        runAndPrint(query: sql, dbHandle: dbHandle)
+                    if let tbl = arg?.lowercased() {
+                        runAndPrint(query: "PRAGMA table_info(\(tbl))", dbHandle: dbHandle)
                     } else {
                         print("Usage: \\desc <table>")
                     }
                 case "\\ask":
-                    if let q = arg {
-                        print("ask not implemented yet: \(q)")
+                    if let q = arg { print("ask not implemented yet: \(q)") }
+                    else { print("Usage: \\ask <query>") }
+                case "\\open":
+                    if let s = arg, let nid = Int64(s) {
+                        guard let db = dbHandle else {
+                            print("Database not available")
+                            break
+                        }
+                        var stmt2: OpaquePointer? = nil
+                        let openSQL = "SELECT path FROM notes WHERE id = ?1 LIMIT 1"
+                        if sqlite3_prepare_v2(db, openSQL, -1, &stmt2, nil) == SQLITE_OK {
+                            sqlite3_bind_int64(stmt2, 1, nid)
+                            if sqlite3_step(stmt2) == SQLITE_ROW,
+                               let cstr = sqlite3_column_text(stmt2, 0) {
+                                let path = String(cString: cstr)
+                                if let encoded = path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+                                    let uri = "obsidian://open?path=\(encoded)"
+                                    let proc = Process()
+                                    proc.launchPath = "/usr/bin/open"
+                                    proc.arguments = [uri]
+                                    do { try proc.run() }
+                                    catch { print("Failed to open URI \(uri): \(error)") }
+                                } else {
+                                    print("Invalid path for URI: \(path)")
+                                }
+                            } else {
+                                print("No note found with id: \(nid)")
+                            }
+                            sqlite3_finalize(stmt2)
+                        } else {
+                            let err = String(cString: sqlite3_errmsg(db))
+                            print("Error preparing open: \(err)")
+                        }
                     } else {
-                        print("Usage: \\ask <query>")
+                        print("Usage: \\open <id>")
                     }
                 default:
-                    print("Unknown command: \(cmd)")
+                    print("Unknown command: \(cmdRaw)")
                 }
                 continue
             }
+
+            // Blank line runs pending SQL buffer
+            if !buffer.isEmpty && trimmed.isEmpty {
+                let sql = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                history.append(sql)
+                historyIndex = nil
+                runAndPrint(query: sql, dbHandle: dbHandle)
+                buffer = ""
+                continue
+            }
+
+            // Skip pure blank when no buffer
+            if buffer.isEmpty && trimmed.isEmpty {
+                continue
+            }
+
             // Accumulate SQL lines
             buffer += line + "\n"
-            let stmtText = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Execute when statement ends with semicolon
-            if stmtText.hasSuffix(";") {
-                // Remove trailing semicolon
-                let sql = String(stmtText.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+            let stmt = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if stmt.hasSuffix(";") {
+                let sql = String(stmt.dropLast())
+                history.append(sql)
+                historyIndex = nil
                 runAndPrint(query: sql, dbHandle: dbHandle)
                 buffer = ""
             }
@@ -145,42 +275,39 @@ struct Shell: ParsableCommand {
         }
         // Fetch rows
         var rows = [[String]]()
-        let maxRows = 50
+        let maxRows = rowLimit
         var rowsTruncated = false
         while true {
             let rc = sqlite3_step(stmt)
-            if rc == SQLITE_ROW {
-                if rows.count < maxRows {
-                    var rowVals = [String]()
-                    for i in 0..<colCount {
-                        let ctype = sqlite3_column_type(stmt, Int32(i))
-                        let val: String
-                        switch ctype {
-                        case SQLITE_INTEGER:
-                            val = String(sqlite3_column_int64(stmt, Int32(i)))
-                        case SQLITE_FLOAT:
-                            val = String(sqlite3_column_double(stmt, Int32(i)))
-                        case SQLITE_TEXT:
-                            if let cstr = sqlite3_column_text(stmt, Int32(i)) {
-                                val = String(cString: cstr)
-                            } else { val = "" }
-                        case SQLITE_NULL:
-                            val = "NULL"
-                        case SQLITE_BLOB:
-                            val = "<BLOB>"
-                        default:
-                            val = "?"
-                        }
-                        rowVals.append(val)
-                    }
-                    rows.append(rowVals)
-                } else {
-                    rowsTruncated = true
-                    break
-                }
-            } else {
+            if rc != SQLITE_ROW { break }
+            // Enforce row limit if > 0
+            if maxRows > 0 && rows.count >= maxRows {
+                rowsTruncated = true
                 break
             }
+            var rowVals = [String]()
+            for i in 0..<colCount {
+                let ctype = sqlite3_column_type(stmt, Int32(i))
+                let val: String
+                switch ctype {
+                case SQLITE_INTEGER:
+                    val = String(sqlite3_column_int64(stmt, Int32(i)))
+                case SQLITE_FLOAT:
+                    val = String(sqlite3_column_double(stmt, Int32(i)))
+                case SQLITE_TEXT:
+                    if let cstr = sqlite3_column_text(stmt, Int32(i)) {
+                        val = String(cString: cstr)
+                    } else { val = "" }
+                case SQLITE_NULL:
+                    val = "NULL"
+                case SQLITE_BLOB:
+                    val = "<BLOB>"
+                default:
+                    val = "?"
+                }
+                rowVals.append(val)
+            }
+            rows.append(rowVals)
         }
         // Compute natural column widths (header vs cell content)
         let sepWidth = 3 // " | "
@@ -250,12 +377,35 @@ struct Shell: ParsableCommand {
             if i < colCount - 1 { sepLine += " | " }
         }
         print(sepLine)
+        // Helper to build ANSI hyperlink
+        func hyperlink(_ text: String, uri: String) -> String {
+            let escStart = "\u{001B}]8;;\(uri)\u{0007}"
+            let escEnd = "\u{001B}]8;;\u{0007}"
+            return "\(escStart)\(text)\(escEnd)"
+        }
+        // Determine if hyperlinks are supported (e.g. iTerm2)
+        let termProgram = ProcessInfo.processInfo.environment["TERM_PROGRAM"] ?? ""
+        let useHyperlinks = (termProgram == "iTerm.app")
         // Print rows
         for row in rows {
             var rowLine = ""
             for i in 0..<colCount {
-                let cell = truncated(row[i], to: colWidths[i])
-                rowLine += cell.padding(toLength: colWidths[i], withPad: " ", startingAt: 0)
+                let rawVal = row[i]
+                let width = colWidths[i]
+                let lowerName = colNames[i].lowercased()
+                let cellOutput: String
+                if lowerName == "path", let encoded = rawVal.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
+                    // Truncate raw path text, pad it, then wrap in hyperlink
+                    let trunc = truncated(rawVal, to: width)
+                    let padded = trunc.padding(toLength: width, withPad: " ", startingAt: 0)
+                    let uri = "obsidian://open?path=\(encoded)"
+                    cellOutput = hyperlink(padded, uri: uri)
+                } else {
+                    // Normal cell: truncate and pad
+                    let trunc = truncated(rawVal, to: width)
+                    cellOutput = trunc.padding(toLength: width, withPad: " ", startingAt: 0)
+                }
+                rowLine += cellOutput
                 if i < colCount - 1 { rowLine += " | " }
             }
             print(rowLine)
