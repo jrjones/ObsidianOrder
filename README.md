@@ -26,6 +26,12 @@ Replace `obs` with the built binary at `.build/release/obs` or install to `/usr/
 ```
 Defaults: `--vault ~/Obsidian`, `--db ~/.obsidian-order/state.sqlite`.
 
+You can also set these in a config file at `~/.config/obsidian-order/config.yaml`:
+```yaml
+vault: /path/to/Obsidian      # default vault path
+db:    /path/to/state.sqlite  # default database path
+```
+
 ### Daily Report
 ```bash
 .build/release/obs daily-report [--json]
@@ -50,6 +56,40 @@ Show a collection:
 ```bash
 .build/release/obs collections show <name> [--db <path>]
 ```
+
+### Shell (interactive REPL)
+Start an interactive SQL shell against your Obsidian index:
+```bash
+.build/release/obs shell [--db ~/.obsidian-order/state.sqlite]
+```
+Inside the prompt, you can use built-in commands (start with `\`) or any raw SQL. Results are truncated to 50 rows.
+
+Built-in commands:
+- `\q` or `\quit`      Exit the shell
+- `\tables`             List all tables in the database
+- `\desc <table>`       Show schema of a table (e.g. `\desc notes`)
+- `\ask <query>`        (Future: LLM-powered search; currently a stub)
+
+SQL examples:
+- List 10 most-recent notes:
+  ```sql
+  SELECT id, title, modified
+    FROM notes
+    ORDER BY modified DESC
+    LIMIT 10;
+  ```
+- Show incomplete tasks:
+  ```sql
+  SELECT note_id, line_no, text
+    FROM tasks
+    WHERE state = 'todo';
+  ```
+- Count today's calendar events:
+  ```sql
+  SELECT COUNT(*)
+    FROM calendar
+    WHERE date(start) = date('now');
+  ```
 
 ## LaunchAgent Installation
 To run the indexer periodically via `launchd`:

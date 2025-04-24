@@ -21,12 +21,73 @@ public extension ObsidianModel {
     /// - Returns: A Document with metadata and body.
     static func parseDocument(_ text: String) throws -> Document {
         if let (yaml, body) = split(text: text) {
-            let any = try Yams.load(yaml: yaml)
-            guard let dict = any as? [String: Any] else {
-                throw ObsidianModelError.invalidFrontMatter
+            // Decode only the fields we care about (title, tags); ignore invalid YAML
+            struct FrontMatter: Decodable {
+                let title: String?
+                let tags: [String]?
             }
-            return Document(metadata: dict, body: body)
+            do {
+                let fm = try YAMLDecoder().decode(FrontMatter.self, from: yaml)
+                var metadata: [String: Any] = [:]
+                if let t = fm.title { metadata["title"] = t }
+                if let tg = fm.tags  { metadata["tags"]  = tg }
+                return Document(metadata: metadata, body: body)
+            } catch {
+                // Fallback manual parse for basic title and tags when YAML is invalid
+                var metadata: [String: Any] = [:]
+                let lines = yaml.components(separatedBy: .newlines)
+                // Manual parse for `title: ...`
+                for rawLine in lines {
+                    let line = rawLine.trimmingCharacters(in: .whitespaces)
+                    if let colonIdx = line.firstIndex(of: ":") {
+                        let key = String(line[..<colonIdx]).trimmingCharacters(in: .whitespaces)
+                        if key == "title" {
+                            let rawValue = line[line.index(after: colonIdx)...].trimmingCharacters(in: .whitespaces)
+                            let titleValue = rawValue.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                            metadata["title"] = titleValue
+                            break
+                        }
+                    }
+                }
+                // Manual parse for `tags:` (inline or block list)
+                var manualTags: [String] = []
+                if let idx = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("tags:") }) {
+                    let tagLine = lines[idx].trimmingCharacters(in: .whitespaces)
+                    let afterColon = String(tagLine.dropFirst("tags:".count)).trimmingCharacters(in: .whitespaces)
+                    if afterColon.hasPrefix("[") && afterColon.hasSuffix("]") {
+                        // Inline list [a, b, c]
+                        let inner = afterColon.dropFirst().dropLast()
+                        manualTags = inner.split(separator: ",").map {
+                            String($0).trimmingCharacters(in: .whitespaces)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                        }
+                    } else if afterColon.isEmpty {
+                        // Block list:
+                        var j = idx + 1
+                        while j < lines.count {
+                            let next = lines[j].trimmingCharacters(in: .whitespaces)
+                            guard next.hasPrefix("-") else { break }
+                            let tagRaw = String(next.dropFirst()).trimmingCharacters(in: .whitespaces)
+                            let tagVal = tagRaw.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                            manualTags.append(tagVal)
+                            j += 1
+                        }
+                    } else {
+                        // Comma-separated inline values
+                        manualTags = afterColon.split(separator: ",").map {
+                            String($0).trimmingCharacters(in: .whitespaces)
+                                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                        }
+                    }
+                    if !manualTags.isEmpty {
+                        metadata["tags"] = manualTags
+                    }
+                }
+                // After manual parse, return metadata (possibly empty)
+                return Document(metadata: metadata, body: body)
+            }
         } else {
+            // No front-matter present
             return Document(metadata: [:], body: text)
         }
     }

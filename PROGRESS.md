@@ -39,6 +39,30 @@
  ---
  _Progress will be checked in and updated as tasks start and complete._
 
+ ## Phase 2 Tasks
+
+- [ ] 1. CLI Extensions
+    - [x] `obs shell` REPL for ad-hoc SQL/CLI commands
+    - [ ] `obs daily-summary` [--date YYYY-MM-DD] [--format md|json]
+    - [ ] `obs embed` [--since <ISO>]
+    - [ ] `obs ask "<query>"` [--top <k>] [--rerank 70b]
+- [ ] 2. Architecture Updates
+    - [ ] Integrate Swiftline REPL layer
+    - [ ] Extend SQLite schema with vector embedding column
+    - [ ] Bundle SQLite-vec extension
+    - [ ] Add LLMClient module
+- [ ] 3. Feature Implementation
+    - [ ] Shell built-ins: `\tables`, `\desc <table>`, `\ask`
+    - [ ] Daily Summary generator (notes, tasks, meetings)
+    - [ ] Embeddings ingestion and storage
+    - [ ] Semantic search and re-ranking
+ - [ ] 4. Configuration & Testing
+    - [x] Read and apply `~/.config/obsidian-order/config.yaml`
+    - [ ] Add tests: ShellTests, SummaryTests, SearchEngineTests
+    - [ ] Update CI: enable code coverage, add test steps
+
+_First task will be the REPL._
+
 ## Progress Log
 
  - 2025-04-23: Created `PROGRESS.md`; documented and logged Phase 1 plan after user approval.

@@ -1,9 +1,11 @@
-# Obsidian Order / (`obs`) -- Phase-1 Specification
+# Obsidian Order / (`obs`)
 Read-only CLI agent for JRJ's Obsidian vault
 
 Target: **Swift 6**, Swift-Argument-Parser, **macOS 15.4+******
 
-## 1. Scope of Phase 1
+## Phase 1
+
+### 1. Scope of Phase 1
 
 | **Goal**                                      | **Deliverable**                                                       | 
 | --------------------------------------------- | --------------------------------------------------------------------- |
@@ -12,7 +14,7 @@ Target: **Swift 6**, Swift-Argument-Parser, **macOS 15.4+******
 | Run headless on JRJ's always-on desktop Mac   | CLI binary (obs) plus sample LaunchAgent plist.                       | 
 
 
-## 2. High-level architecture
+### 2. High-level architecture
 ```
     ┌──────────┐    scan/update     ┌──────────────┐
     │  obs CLI │ ───────────────▶   │  Index DB    │  (SQLite)
@@ -25,7 +27,7 @@ Target: **Swift 6**, Swift-Argument-Parser, **macOS 15.4+******
 - **CLI** -- sub-commands exposed via Swift Argument Parser.
 - **Scheduler** -- launchd plist calling obs index --since 15m every 15 min.
 
-## 3. Command-line interface
+### 3. Command-line interface
 ```
     obs <command> [options]
     
@@ -47,7 +49,7 @@ Common flags
     --json              Output raw JSON instead of markdown
 ```
   
-## 4. Modules / packages
+### 4. Modules / packages
 
 | **Package** | **Responsibility** | **3rd-party deps** | 
 | ---- | ---- | ----  |
@@ -59,7 +61,7 @@ Common flags
 
 All packages live in one workspace (ObsidianOrder).
 
-## 5. Data model (SQLite)
+### 5. Data model (SQLite)
 ```    
     notes(id PK, path, title, created, modified, tags TEXT, is_daily BOOL, is_meeting BOOL)
     links(from_id, to_title)
@@ -68,7 +70,7 @@ All packages live in one workspace (ObsidianOrder).
     calendar(id PK, uid, start, end, title, location, is_virtual)
 ```
   
-## 6. LaunchAgent template
+### 6. LaunchAgent template
 
 `~/Library/LaunchAgents/com.jrj.obs.indexer.plist`
 
@@ -86,7 +88,7 @@ All packages live in one workspace (ObsidianOrder).
     </plist>
 ```
 
-## 7. Build & run
+### 7. Build & run
 ```bash    
     git clone git@github.com:jrj/obsidian-order.git
     cd obsidian-order
@@ -95,14 +97,14 @@ All packages live in one workspace (ObsidianOrder).
     ./.build/release/obs daily-report
 ```
   
-## **8. Testing**
+### **8. Testing**
 
 - **Unit tests** using SwiftTesting for Markdown parsing, index diffing, date windows.
 - **Integration test** fixture vault in Tests/Fixtures checked into repo.
 - Continuous integration via GitHub Actions (macOS 14 runner).
 * * *
 
-## 9. Future phases (outline only)
+### 9. Future phases (outline only)
 
  1. **Phase 2** -- safe write-ops behind --apply flag (snapshot freezing, collection updates).
 
@@ -110,8 +112,122 @@ All packages live in one workspace (ObsidianOrder).
 
  3. **Phase 4** -- GUI menubar wrapper / merge with Plogger.
 
-## 10. Project conventions
+### 10. Project conventions
 
 - Default branch **main**; agent runs create feature branches (Phase 2).
 - Semantic versioning 0.x until writable features ship.
 - All code under MIT license unless corporate policy dictates otherwise.
+
+# Phase 2
+
+_Adds interactive exploration + first LLM features, still _**_read-only_**_, builds on Phase 1.___
+
+## 0. Objectives
+
+| **#** | **Outcome** | **Why it matters** | 
+| ----- | ----------- | -----------------  |
+| 1     | **obs shell REPL** for ad-hoc SQL/CLI commands. | Lets JRJ "poke around" the DB, cement mental model. | 
+| 2 | **Daily Summary generator** (obs daily-summary) that produces one Markdown digest covering _all_ notes created/modified today--no file writes, stdout only. | First practical LLM usage; validates summariser pipeline without touching vault. | 
+| 3 | **Embeddings & semantic search** (obs embed, obs ask) with local MiniLM (fallback: remote). | Improves search now and sets groundwork for later RAG features. | 
+
+## 1. CLI extensions (Swift-Argument-Parser)
+```
+    obs shell
+    obs daily-summary [--date YYYY-MM-DD] [--format md|json]
+    obs embed        [--since <ISO>]           # updates DB vectors
+    obs ask "<query>" [--top 5] [--rerank 70b] # semantic search
+
+obs --help shows new commands grouped under **Explore**.
+```
+## 2. Architecture deltas
+```    
+    +---------------------+
+    | REPL (Swiftline)    |  <-- new interactive layer
+    +---------------------+
+    | CLI commands        |
+    +---------------------+
+    |   Reporting         |  <-- add DailySummary.swift
+    |   SearchEngine      |  <-- add embeddings + ANN
+    +---------------------+
+    | VaultIndex (Phase1) |
+    | SQLite vec.ext      |  <-- new 'embedding' column
+    +---------------------+
+```
+
+- **SQLite-vec** extension bundled as a static lib; adds vector_cosine() and approx_knn virtual table.
+- **LLMClient** (new): wraps local Ollama & remote endpoints, exposes summarize(text) and embed(text).
+
+## 3. Feature details
+
+### 3.1 obs shell
+
+- Uses **Swiftline** or linenoise for readline, history, autocomplete on table/column names.
+- Built-ins:
+
+    - \tables -- list DB tables
+    - \desc <table> -- schema
+    - \ask <query> -- same as CLI ask
+    - Raw SQL executes and prints pretty table (50-row cap).
+
+### 3.2 Daily Summary
+```shell    
+    obs daily-summary --date 2025-04-23 --format md
+```
+1. Pull all notes modified BETWEEN date 00:00 … 23:59.
+2. Chunk text to ≤4 k tokens → feed to local 70 B summarize prompt.
+3. Merge chunk summaries via small 7 B "combine" prompt.
+4. Render Markdown sections:
+
+    - 📄 **Notes created******
+    - 📌 **Tasks completed / still open******
+    - 🤝 **Meetings** (reads existing Summary:: property if present)
+
+5. Output to stdout (user can pipe to file).
+
+_Nothing is persisted to the vault._ Optionally store final summary in summaries DB table for later reuse.
+
+### 3.3 Embeddings & search
+
+ - **obs embed******
+
+    - Checks mtime > last_embedded_at to embed only changed files.
+
+    - Model: nomic-embed-text-v1.5 via Ollama (384-dim).
+
+    - Stores vector + embedding_ts in notes table.
+
+ - **obs ask******
+
+    1. Embed the query text.
+
+    2. SELECT path, title, vector_cosine(embedding, ?) AS score … ORDER BY score DESC LIMIT k
+
+    3. Optional re-rank: send top-k note excerpts + question to local 70 B for better ordering (--rerank 70b).
+
+    4. Print ranked list with scores and snippet.
+
+## 4. Configuration
+~/.config/obsidian-order/config.yaml:
+``` yaml    
+    embedding_model: ollama/nomic-embed
+    summarize_model:
+      primary: ollama/llama3:70b
+      fallback: gpt-4o
+    ollama_hosts:
+      mac: http://127.0.0.1:11434
+      pc:  http://10.0.1.42:11434
+    cloud_budget_usd_per_day: 1.00
+
+Router policy identical to Phase 1 description.
+```
+
+## 5. Testing & CI additions
+
+| **Layer** | **New tests** | 
+| ---- | ----  |
+| **SearchEngineTests** | cosine accuracy on toy corpus; re-ranker order. | 
+| **SummaryTests** | snapshot test: given fixture notes, summary == golden file. | 
+| **ShellTests** | parse built-ins, execute SELECT 1. | 
+
+CI: add swift test --enable-code-coverage; keep existing Codecov step.
+

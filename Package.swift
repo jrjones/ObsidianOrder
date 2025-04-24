@@ -41,10 +41,14 @@ let package = Package(
                 "ObsidianModel",
                 // Vault indexing
                 "VaultIndex",
-                // Graph client for calendar integration
+                // Calendar integration
                 "GraphClient",
                 // SQLite for querying index
                 .product(name: "SQLite", package: "SQLite.swift"),
+                // YAML parsing for CLI config (Shell)
+                .product(name: "Yams", package: "Yams"),
+                // YAML config parsing
+                .product(name: "Yams", package: "Yams"),
             ],
             path: "obs/obs"
         ),
