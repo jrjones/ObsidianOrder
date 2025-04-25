@@ -9,7 +9,7 @@
         #   embed/ask/daily-summary once implemented —
 
         # Which embedding model to use
-        embedding_model: ollama/nomic-embed
+        embedding_model: ollama/nomic-embed-text
 
         # Which LLMs to use for summarisation
         summarize_model:

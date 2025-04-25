@@ -192,23 +192,52 @@ _Nothing is persisted to the vault._ Optionally store final summary in summaries
 
 ### 3.3 Embeddings & search
 
- - **obs embed******
+ - **obs embed**
 
-    - Checks mtime > last_embedded_at to embed only changed files.
+    Flags:
+      • `--since <ISO>`: only embed notes modified since timestamp (default: all notes)
+      • `--host <URL>`: override Ollama API base URL (default from config)
+      • `--model <model>`: override embedding model name (default from config or `nomic-embed-text`)
+      • `--reset`: clear existing embeddings before embedding
 
-    - Model: nomic-embed-text-v1.5 via Ollama (384-dim).
+    Behavior:
+      • On `--reset`, runs `UPDATE notes SET embedding=NULL, last_embedded=NULL`
+      • Ensures `notes` table has columns `embedding BLOB` and `last_embedded DOUBLE` (ALTER TABLE if needed)
+      • Scans vault markdown files; filters by modification date (> last_embedded or `--since`)
+      • Reads file contents, POSTs to Ollama `/api/embed` with `{ model, input: [text] }`
+      • Writes returned vector as BLOB into `notes.embedding`, updates `last_embedded`
+      • Emits a colored progress dot per file: green `.` on success, red `.` on failure
 
-    - Stores vector + embedding_ts in notes table.
+ - **obs ask**
 
- - **obs ask******
+    1. Embed the query text via Ollama (`/api/embed`).
 
-    1. Embed the query text.
+    2. SELECT path, title, and cosine similarity:
+       ```sql
+       SELECT path, title, vector_cosine(embedding, ?) AS score
+         FROM notes
+        ORDER BY score DESC
+        LIMIT <k>;
+       ```
 
-    2. SELECT path, title, vector_cosine(embedding, ?) AS score … ORDER BY score DESC LIMIT k
+    3. Load the full text of each top-<k> note from disk.
 
-    3. Optional re-rank: send top-k note excerpts + question to local 70 B for better ordering (--rerank 70b).
+    4. Construct a RAG prompt with an optional system instruction and each note under a heading:
+       ```
+       You are a helpful assistant. Use the provided notes to answer the question.
 
-    4. Print ranked list with scores and snippet.
+       ### Note: <title> (score: <score>)
+       <full note text>
+
+       Question: <query>
+       Answer:
+       ```
+
+    5. POST this prompt to Ollama `/api/generate` and return the model’s `completion`.
+
+    6. Display a spinner or status indicator while waiting for LLM response.
+
+    7. (Future) Support streaming token-by-token output for improved interactivity.
 
 ## 4. Configuration
 ~/.config/obsidian-order/config.yaml:
