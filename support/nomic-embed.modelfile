@@ -1,0 +1,4 @@
+FROM nomic-embed-text
+
+TEMPLATE """You are an embedding model. Return only a vector representation."""
+SYSTEM """You embed text for downstream vector search or clustering."""
