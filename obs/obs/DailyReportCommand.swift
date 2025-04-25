@@ -2,10 +2,13 @@ import ArgumentParser
 import Foundation
 import ObsidianModel
 import SQLite
+import Yams
 
 /// `obs daily-report` command: render today's merged notes, tasks, meetings
 struct DailyReport: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "daily-report", abstract: "Merge today's notes, tasks, meetings to stdout")
+    @Argument(help: "Date in YYYY-MM-DD format (default: today)")
+    var date: String?
     @Option(name: .long, help: "Path to Obsidian vault (default: ~/Obsidian)")
     var vault: String?
     @Option(name: .long, help: "Path to SQLite DB (default: ~/.obsidian-order/state.sqlite)")
@@ -14,18 +17,86 @@ struct DailyReport: ParsableCommand {
     var json: Bool = false
     func run() throws {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        let vaultPath = vault ?? "\(home)/Obsidian"
-        let dbPath = db ?? "\(home)/.obsidian-order/state.sqlite"
-        // Today's date
-        let today = Date()
+        // Load CLI config (flag > config file > default)
+        struct CLIConfig: Decodable { var vault: String?; var db: String? }
+        let configPath = "\(home)/.config/obsidian-order/config.yaml"
+        var config = CLIConfig(vault: nil, db: nil)
+        if FileManager.default.fileExists(atPath: configPath) {
+            do {
+                let yamlText = try String(contentsOfFile: configPath)
+                config = try YAMLDecoder().decode(CLIConfig.self, from: yamlText)
+            } catch {
+                print("Warning: failed to parse config at \(configPath): \(error)")
+            }
+        }
+        // Determine vault path: flag > config > default
+        let defaultVault = "\(home)/Obsidian"
+        let flagVault = vault.map { NSString(string: $0).expandingTildeInPath }
+        let configVault = config.vault.map { NSString(string: $0).expandingTildeInPath }
+        let vaultPath: String
+        if let v = flagVault {
+            vaultPath = v
+        } else if let cv = configVault, FileManager.default.fileExists(atPath: cv) {
+            vaultPath = cv
+        } else {
+            if config.vault != nil {
+                print("Warning: config vault path not found at \(config.vault!), using default \(defaultVault).")
+            }
+            vaultPath = defaultVault
+        }
+        // Determine db path: flag > config > default
+        let defaultDb = "\(home)/.obsidian-order/state.sqlite"
+        let flagDb = db.map { NSString(string: $0).expandingTildeInPath }
+        let configDb = config.db.map { NSString(string: $0).expandingTildeInPath }
+        let dbPath: String
+        if let d = flagDb {
+            dbPath = d
+        } else if let cd = configDb {
+            dbPath = cd
+        } else {
+            dbPath = defaultDb
+        }
+        // Print used paths
+        print("Using vault path: \(vaultPath)")
+        print("Using DB path:    \(dbPath)")
+        // Determine target date (default: today)
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString = dateFormatter.string(from: today)
-        // Load daily note
+        let dateString: String
+        if let input = date {
+            // Validate provided date
+            guard dateFormatter.date(from: input) != nil else {
+                throw ValidationError("Invalid date format: \(input). Expected YYYY-MM-DD.")
+            }
+            dateString = input
+        } else {
+            dateString = dateFormatter.string(from: Date())
+        }
+        // Locate daily note under ~/Obsidian/daily/ (or year subfolders), or fallback to vault root
+        let fm = FileManager.default
         let noteFilename = "\(dateString).md"
-        let noteURL = URL(fileURLWithPath: vaultPath).appendingPathComponent(noteFilename)
+        let dailyDirURL = URL(fileURLWithPath: vaultPath).appendingPathComponent("daily")
+        // Candidate URL: direct child
+        let candidate1 = dailyDirURL.appendingPathComponent(noteFilename)
+        // Recursive search under dailyDirURL
+        let noteURL: URL = {
+            if fm.fileExists(atPath: candidate1.path) {
+                return candidate1
+            }
+            if let enumerator = fm.enumerator(at: dailyDirURL,
+                                               includingPropertiesForKeys: nil,
+                                               options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
+                for case let url as URL in enumerator {
+                    if url.lastPathComponent == noteFilename {
+                        return url
+                    }
+                }
+            }
+            // Fallback to vault root
+            return URL(fileURLWithPath: vaultPath).appendingPathComponent(noteFilename)
+        }()
         var doc: Document? = nil
-        if FileManager.default.fileExists(atPath: noteURL.path) {
+        if fm.fileExists(atPath: noteURL.path) {
             let text = try String(contentsOf: noteURL)
             doc = try ObsidianModel.parseDocument(text)
         }
