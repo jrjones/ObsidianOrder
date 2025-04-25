@@ -78,10 +78,13 @@ struct DailySummary: ParsableCommand {
 
         // Process meeting notes: generate AI summaries and update files
         let config = try Config.load()
+        // Ensure summarization models are configured
+        guard let sumCfg = config.summarize_model else {
+            throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
+        }
         let hostURL = config.ollamaHostURL
-        // Determine primary and fallback summarize models
-        let primaryModel = config.summarize_model?.primary ?? "summit"
-        let fallbackModel = config.summarize_model?.fallback ?? "summit-small"
+        let primaryModel = sumCfg.primary
+        let fallbackModel = sumCfg.fallback
         let client = OllamaClient(host: hostURL, model: primaryModel)
         var meetingSummaries: [(title: String, summary: String, tasks: [ObsidianModel.Task])] = []
         // Query meeting notes from database by path pattern matching the meeting-notes folder and date
@@ -99,74 +102,40 @@ struct DailySummary: ParsableCommand {
                 let trimmed = originalLine.trimmingCharacters(in: .whitespacesAndNewlines)
                 if trimmed == "Summary::" || trimmed == "Summary:: Needs Review" {
                     let systemPrompt = "You are Summit, an expert at summarizing meeting notes. Provide a concise one-line summary."
-                    // Spinner indicator
+                    // Spinner
                     var spinning = true
                     let spinnerChars = ["|", "/", "-", "\\"]
                     let spinnerThread = Thread {
-                        var frameIndex = 0
+                        var i = 0
                         while spinning {
-                            let frame = spinnerChars[frameIndex % spinnerChars.count]
+                            let frame = spinnerChars[i % spinnerChars.count]
                             fputs("\r\(frame) Summarizing \(title)", stdout)
                             fflush(stdout)
-                            frameIndex += 1
+                            i += 1
                             Thread.sleep(forTimeInterval: 0.1)
                         }
                     }
                     spinnerThread.start()
-                    // Try primary then fallback model
-                    var aiRaw: String
-                    do {
-                        aiRaw = try client.chatCompletion(system: systemPrompt, user: content, model: primaryModel)
-                    } catch {
-                        aiRaw = try client.chatCompletion(system: systemPrompt, user: content, model: fallbackModel)
-                    }
-                    // Stop spinner and clear line
+                    // Summarize with retry (strips <think> and prefixes emoji)
+                    let summary = try client.summarizeWithRetry(
+                        system: systemPrompt,
+                        user: content,
+                        primaryModel: primaryModel,
+                        fallbackModel: fallbackModel
+                    )
                     spinning = false
                     fputs("\r", stdout)
-                    // Strip chain-of-thought
-                    var cleaned = aiRaw.replacingOccurrences(of: "<think>[\\s\\S]*?</think>", with: "", options: .regularExpression)
-                    cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // Retry once if multi-line
-                    if cleaned.contains("\n") {
-                        spinning = true
-                        let retryThread = Thread {
-                            var idx2 = 0
-                            while spinning {
-                                let frame = spinnerChars[idx2 % spinnerChars.count]
-                                fputs("\r\(frame) Retrying \(title)", stdout)
-                                fflush(stdout)
-                                idx2 += 1
-                                Thread.sleep(forTimeInterval: 0.1)
-                            }
-                        }
-                        retryThread.start()
-                        var aiRetry: String
-                        do {
-                            aiRetry = try client.chatCompletion(system: systemPrompt, user: content, model: primaryModel)
-                        } catch {
-                            aiRetry = try client.chatCompletion(system: systemPrompt, user: content, model: fallbackModel)
-                        }
-                        spinning = false
-                        fputs("\r", stdout)
-                        var cleanedRetry = aiRetry.replacingOccurrences(of: "<think>[\\s\\S]*?</think>", with: "", options: .regularExpression)
-                        cleanedRetry = cleanedRetry.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if cleanedRetry.contains("\n") {
-                            cleaned = cleanedRetry.components(separatedBy: .newlines).first ?? cleanedRetry
-                        } else {
-                            cleaned = cleanedRetry
-                        }
-                    }
-                    // Write one-line summary
+                    // Inject summary
                     if let range = originalLine.range(of: "Summary::") {
                         let prefix = String(originalLine[..<range.lowerBound])
-                        lines[idx] = "\(prefix)Summary:: ✨\(cleaned)"
+                        lines[idx] = "\(prefix)Summary:: \(summary)"
                     } else {
-                        lines[idx] = "Summary:: ✨\(cleaned)"
+                        lines[idx] = "Summary:: \(summary)"
                     }
                     updated = true
                     let doc = try ObsidianModel.parseDocument(content)
                     let mTasks = ObsidianModel.parseTasks(doc.body)
-                    meetingSummaries.append((title: title, summary: cleaned, tasks: mTasks))
+                    meetingSummaries.append((title: title, summary: summary, tasks: mTasks))
                     break
                 }
             }

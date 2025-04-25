@@ -182,9 +182,11 @@ obs --help shows new commands grouped under **Explore**.
 3. Merge chunk summaries via small 7 B "combine" prompt.
 4. Render Markdown sections:
 
-    - 📄 **Notes created******
-    - 📌 **Tasks completed / still open******
+    - 📄 **Notes created**
+    - 📌 **Tasks completed / still open**
     - 🤝 **Meetings** (reads existing Summary:: property if present)
+
+_Note: This command requires an explicit `summarize_model` entry in `config.yaml`. No built-in defaults are used for summarization models; omitting or misconfiguring this setting will cause the command to error. This ensures no unintended remote or unauthorized model usage._
 
 5. Output to stdout (user can pipe to file).
 
@@ -253,6 +255,8 @@ _Nothing is persisted to the vault._ Optionally store final summary in summaries
 
 Router policy identical to Phase 1 description.
 ```
+ 
+**Important:** Critical configuration values such as `summarize_model` and `embedding_model` must be explicitly defined in `config.yaml`. The system does not apply intelligent defaults for these settings; missing or invalid entries will cause commands to error. This prevents unintended remote calls or policy violations.
 
 ## 5. Testing & CI additions
 

@@ -1,5 +1,6 @@
 import ArgumentParser
 import Foundation
+import Darwin  // for fputs, fflush
 import ObsidianModel
 import SQLite
 import Yams
@@ -15,6 +16,8 @@ struct DailyReport: ParsableCommand {
     var db: String?
     @Flag(name: .long, help: "Output raw JSON instead of markdown")
     var json: Bool = false
+    @Flag(name: [.short, .long], help: "Update meeting notes and daily page in place")
+    var update: Bool = false
     func run() throws {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         // Load CLI config (flag > config file > default)
@@ -126,6 +129,85 @@ struct DailyReport: ParsableCommand {
                 let task = ObsidianModel.Task(line: row[lineExp], text: row[textExp], state: state)
                 tasks.append(task)
             }
+        }
+        // If --update, regenerate full-day summary and inject into the daily note, then exit
+        if update {
+            // Load original daily note
+            guard let original = try? String(contentsOf: noteURL, encoding: .utf8) else {
+                print("❌ Daily note not found at \(noteURL.path)")
+                throw ExitCode(1)
+            }
+            let lines = original.components(separatedBy: "\n")
+            // Find Summary:: placeholder
+            guard let sumIdx = lines.firstIndex(where: { $0.starts(with: "Summary::") }) else {
+                print("❌ No 'Summary::' line found in \(noteURL.lastPathComponent)")
+                throw ExitCode(1)
+            }
+            let rawSuffix = lines[sumIdx].dropFirst("Summary::".count)
+            let suffix = rawSuffix.trimmingCharacters(in: .whitespaces)
+            let lowerSuffix = suffix.lowercased()
+            // Only proceed if empty or marked 'Needs Review' (with or without trailing period)
+            guard suffix.isEmpty || lowerSuffix.hasPrefix("needs review") else {
+                print("ℹ️ Existing summary present and not marked 'Needs Review', skipping update.")
+                throw ExitCode(0)
+            }
+            // Build clean prompt by stripping dataview/task fences and old Summary line
+            var promptBody = original
+            let fenceRegex = "(?ms)```(?:dataview|dataviewjs|task)[\\s\\S]*?```"
+            promptBody = promptBody.replacingOccurrences(
+                of: fenceRegex,
+                with: "",
+                options: .regularExpression
+            )
+            let summaryRegex = "(?m)^Summary::.*$"
+            promptBody = promptBody.replacingOccurrences(
+                of: summaryRegex,
+                with: "",
+                options: .regularExpression
+            )
+            // Construct prompt
+            let systemPrompt = "You are Summit, an expert at summarizing daily notes succinctly."
+            let userPrompt = "Summarize the following daily journal for \(dateString):\n\n" + promptBody
+            // Call summarizer with spinner
+            let config = try Config.load()
+            // Ensure summarization models are configured
+            guard let sumCfg = config.summarize_model else {
+                throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
+            }
+            let primaryModel = sumCfg.primary
+            let fallbackModel = sumCfg.fallback
+            let client = OllamaClient(host: config.ollamaHostURL, model: primaryModel)
+            // Spinner thread
+            var spinning = true
+            let spinnerChars = ["|", "/", "-", "\\"]
+            let spinnerThread = Thread {
+                var idx = 0
+                while spinning {
+                    let frame = spinnerChars[idx % spinnerChars.count]
+                    fputs("\r\(frame) Summarizing daily note \(dateString)", stdout)
+                    fflush(stdout)
+                    idx += 1
+                    Thread.sleep(forTimeInterval: 0.1)
+                }
+            }
+            spinnerThread.start()
+            // Perform summarization with retry
+            let summaryText = try client.summarizeWithRetry(
+                system: systemPrompt,
+                user: userPrompt,
+                primaryModel: primaryModel,
+                fallbackModel: fallbackModel
+            )
+            // Stop spinner
+            spinning = false
+            fputs("\r", stdout)
+            // Inject into lines and write updated note
+            var updatedLines = lines
+            updatedLines[sumIdx] = "Summary:: \(summaryText)"
+            let updated = updatedLines.joined(separator: "\n")
+            try updated.write(to: noteURL, atomically: true, encoding: .utf8)
+            print("✅ Updated daily note: \(noteURL.lastPathComponent)")
+            return
         }
         // Render report
         if json {

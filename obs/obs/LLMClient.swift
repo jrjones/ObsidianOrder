@@ -164,3 +164,64 @@ private extension URLSession {
         return (data, response, error)
     }
 }
+
+// MARK: - Summit summarization with chain-of-thought stripping and retry
+extension OllamaClient {
+    /// Summarize given user text with optional system prompt, stripping out <think> tags and retrying up to two fallback attempts.
+    /// - Parameters:
+    ///   - system: Optional system prompt prefix.
+    ///   - user: The user content to summarize.
+    ///   - primaryModel: Name of the primary model to use.
+    ///   - fallbackModel: Name of a fallback model (if primary fails).
+    /// - Returns: A one-line cleaned summary.
+    func summarizeWithRetry(system: String? = nil,
+                            user: String,
+                            primaryModel: String,
+                            fallbackModel: String? = nil) throws -> String {
+        let fallback = fallbackModel ?? primaryModel
+        let maxAttempts = 3
+        var attempts: [String] = []
+        for attempt in 0..<maxAttempts {
+            let modelName = (attempt == 0 ? primaryModel : fallback)
+            // Obtain raw completion
+            let raw: String
+            do {
+                raw = try chatCompletion(system: system, user: user, model: modelName)
+            } catch {
+                raw = try chatCompletion(system: system, user: user, model: fallback)
+            }
+            // Clean chain-of-thought and whitespace
+            var cleaned = raw
+                .replacingOccurrences(of: "<think>[\\s\\S]*?</think>",
+                                     with: "",
+                                     options: .regularExpression)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // Sanity transforms
+            cleaned = cleaned.replacingOccurrences(of: "\n", with: " ")
+            cleaned = cleaned.replacingOccurrences(of: "*", with: "")
+            cleaned = cleaned.replacingOccurrences(of: "Summary - ", with: "")
+            // Remove ISO dates (YYYY-MM-DD)
+            cleaned = cleaned.replacingOccurrences(
+                of: "\\b\\d{4}-\\d{2}-\\d{2}\\b",
+                with: "",
+                options: .regularExpression
+            )
+            // Remove textual dates (Month D, YYYY)
+            cleaned = cleaned.replacingOccurrences(
+                of: "[A-Za-z]+\\s+\\d{1,2},\\s+\\d{4}",
+                with: "",
+                options: .regularExpression
+            )
+            cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+            attempts.append(cleaned)
+            // Enforce single-line and <256-char rules
+            if !cleaned.contains("\n") && cleaned.count < 256 {
+                return "✨" + cleaned
+            }
+        }
+        // All attempts failed, log and return last attempt
+        fputs("⚠️ Summary failed sanity checks: \(attempts)\n", stdout)
+        let final = attempts.last ?? ""
+        return "✨" + final
+    }
+}
