@@ -1,8 +1,9 @@
 # Obsidian Order (obs)
-
+<!---
 ![CI](https://github.com/jrjones/ObsidianOrder/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/jrjones/ObsidianOrder/branch/main/graph/badge.svg)](https://codecov.io/gh/jrjones/ObsidianOrder)
-
+--->
+![support/oo-logo.png](support/oo-logo.png)
 `obs` is a headless CLI agent for indexing and reporting on your Obsidian vault.
 
 ## Requirements
@@ -15,9 +16,7 @@ git clone git@github.com:jrj/obsidian-order.git
 cd obsidian-order
 swift build -c release
 ```
-
 ## Usage
-
 Replace `obs` with the built binary at `.build/release/obs` or install to `/usr/local/bin/obs`.
 
 ### Index a Vault
@@ -98,7 +97,28 @@ mkdir -p ~/Library/LaunchAgents
 cp support/com.jrj.obs.indexer.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.jrj.obs.indexer.plist
 ```
+## Config and Requirements
+You will need to set up a configuration file. There's a sample in /support
+
+We will avoid smart defaults for config values - too much risk of hitting an external model with confidential data or touching the wrong obsidian vault. Get the config right.
+
+You also need to have an ollama install, on localhost or the local network. It will need a few models:
+
+summit or summit-small 
+deepseek-r1:70b or deepseek-r1:latest
+nomic-embed (based on nomic-embed-text)
+Model files will be provided as things stabilize
 
 ## Support
 - Sample LaunchAgent plist: `support/com.jrj.obs.indexer.plist`
-```
+- Sample config file: `config.yaml` (default location: ~/.config/obsidian-order/config.yaml)
+- nomic-embed.modelfile
+
+Needed:
+
+- summit.modelfile
+- summit-small.modelfile
+
+## Appendix: Name
+Yes, it's a [star trek reference](https://memory-alpha.fandom.com/wiki/Obsidian_Order).
+
