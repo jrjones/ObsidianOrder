@@ -47,8 +47,7 @@ let package = Package(
                 .product(name: "SQLite", package: "SQLite.swift"),
                 // YAML parsing for CLI config (Shell)
                 .product(name: "Yams", package: "Yams"),
-                // YAML config parsing
-                .product(name: "Yams", package: "Yams"),
+                // YAML config parsing (already included above)
             ],
             path: "obs/obs"
         ),

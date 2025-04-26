@@ -434,7 +434,7 @@ struct Shell: ParsableCommand {
         }
         // Determine if hyperlinks are supported (e.g. iTerm2)
         let termProgram = ProcessInfo.processInfo.environment["TERM_PROGRAM"] ?? ""
-        let useHyperlinks = (termProgram == "iTerm.app")
+        // hyperlinks always rendered; termProgram: \(termProgram)
         // Print rows
         for row in rows {
             var rowLine = ""

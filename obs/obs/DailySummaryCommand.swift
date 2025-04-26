@@ -108,12 +108,13 @@ struct DailySummary: ParsableCommand {
                     || trimmed == "Summary:: Needs Review"
                     || (overwrite && trimmed.hasPrefix("Summary:: ✨")) {
                     let systemPrompt = "You are Summit, an expert at summarizing meeting notes. Provide a concise one-line summary."
-                    // Spinner
-                    var spinning = true
+                    // Spinner (using a reference flag to satisfy @Sendable closure)
+                    class SpinnerFlag { var isSpinning = true }
+                    let spinnerFlag = SpinnerFlag()
                     let spinnerChars = ["|", "/", "-", "\\"]
-                    let spinnerThread = Thread {
+                    let spinnerThread = Thread { [spinnerFlag] in
                         var i = 0
-                        while spinning {
+                        while spinnerFlag.isSpinning {
                             let frame = spinnerChars[i % spinnerChars.count]
                             fputs("\r\(frame) Summarizing \(title)", stdout)
                             fflush(stdout)
@@ -129,7 +130,7 @@ struct DailySummary: ParsableCommand {
                         primaryModel: primaryModel,
                         fallbackModel: fallbackModel
                     )
-                    spinning = false
+                    spinnerFlag.isSpinning = false
                     fputs("\r", stdout)
                     // Inject summary
                     if let range = originalLine.range(of: "Summary::") {
