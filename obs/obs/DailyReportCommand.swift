@@ -166,6 +166,7 @@ struct DailyReport: ParsableCommand {
     var update: Bool = false
     @Flag(name: [.short, .long], help: "Overwrite existing AI-generated summaries in daily and meeting notes")
     var overwrite: Bool = false
+
     func run() throws {
         // Paths, date, and initial data
         let (vaultPath, dbPath) = resolvePaths(flagVault: vault, flagDb: db)
@@ -174,278 +175,194 @@ struct DailyReport: ParsableCommand {
         let dateString = try resolveDate(input: date)
         let noteURL = locateDailyNote(vaultPath: vaultPath, dateString: dateString)
         let doc = try loadDailyDoc(at: noteURL)
-        let connection = try Connection(dbPath)
-        let notesTable = Table("notes")
-        let pathExp = Expression<String>("path")
-        let tasks = try loadTasks(from: connection, noteURL: noteURL)
-        // If --update: regenerate summaries in both meeting notes and daily note
+        let dbConn = try Connection(dbPath)
+        let tasks = try loadTasks(from: dbConn, noteURL: noteURL)
+
         if update {
-            // Summarize and update meeting notes first (overwrite placeholders or existing AI summaries)
-            let meetingPattern = "%\(dateString)%"
-            let meetingQuery = notesTable.filter(pathExp.like(meetingPattern))
-            // Load summarization models
-            let cfg = try Config.load()
-            guard let sumCfg2 = cfg.summarize_model else {
-                throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
-            }
-            let primaryModel2 = sumCfg2.primary
-            let fallbackModel2 = sumCfg2.fallback
-            let client2 = OllamaClient(host: cfg.ollamaHostURL, model: primaryModel2)
-            for row in try connection.prepare(meetingQuery) {
-                let fileURL = URL(fileURLWithPath: row[pathExp])
-                // skip the daily note itself so we only update actual meeting notes
-                if fileURL.lastPathComponent == noteURL.lastPathComponent { continue }
-                guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-                // Only update meeting notes that already contain a Summary:: placeholder
-                guard content.contains("Summary::") else { continue }
-                var lines = content.components(separatedBy: "\n")
-                var meetingUpdated = false
-                for idx in lines.indices {
-                    let orig = lines[idx]
-                    let trimmed = orig.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
-                    if trimmed == "Summary::" || trimmed == "Summary:: Needs Review" || (overwrite && trimmed.hasPrefix("Summary:: ✨")) {
-                        let systemPrompt2 = "You are Summit, an expert at summarizing meeting notes. Provide a concise one-line summary."
-                        let summary2 = try client2.summarizeWithRetry(
-                            system: systemPrompt2,
-                            user: content,
-                            primaryModel: primaryModel2,
-                            fallbackModel: fallbackModel2
-                        )
-                        if let range = orig.range(of: "Summary::") {
-                            let prefix = String(orig[..<range.lowerBound])
-                            lines[idx] = "\(prefix)Summary:: \(summary2)"
-                        } else {
-                            lines[idx] = "Summary:: \(summary2)"
-                        }
-                        meetingUpdated = true
-                        break
-                    }
-                }
-                if meetingUpdated {
-                    let newText = lines.joined(separator: "\n")
-                    try newText.write(to: fileURL, atomically: true, encoding: .utf8)
-                    print("✅ Updated meeting note: \(fileURL.lastPathComponent)")
-                }
-            }
-            // Load original daily note
-            guard let original = try? String(contentsOf: noteURL, encoding: .utf8) else {
-                print("❌ Daily note not found at \(noteURL.path)")
-                throw ExitCode(1)
-            }
-            let lines = original.components(separatedBy: "\n")
-            // Find Summary:: placeholder
-            guard let sumIdx = lines.firstIndex(where: { $0.starts(with: "Summary::") }) else {
-                print("❌ No 'Summary::' line found in \(noteURL.lastPathComponent)")
-                throw ExitCode(1)
-            }
-            let rawSuffix = lines[sumIdx].dropFirst("Summary::".count)
-            let suffix = rawSuffix.trimmingCharacters(in: CharacterSet.whitespaces)
-            let lowerSuffix = suffix.lowercased()
-            // Only proceed if empty or marked 'Needs Review' (with or without trailing period)
-            guard overwrite || suffix.isEmpty || lowerSuffix.hasPrefix("needs review") else {
-                print("ℹ️ Existing summary present and not marked 'Needs Review', skipping update.")
-                throw ExitCode(0)
-            }
-            // Build clean prompt by stripping dataview/task fences and old Summary line
-            var promptBody = original
-            let fenceRegex = "(?ms)```(?:dataview|dataviewjs|task)[\\s\\S]*?```"
-                promptBody = promptBody.replacingOccurrences(
-                    of: fenceRegex,
-                    with: "",
-                    options: String.CompareOptions.regularExpression
-                )
-            let summaryRegex = "(?m)^Summary::.*$"
-            promptBody = promptBody.replacingOccurrences(
-                of: summaryRegex,
-                with: "",
-                options: String.CompareOptions.regularExpression
-            )
-            // Strip inline dataview summary queries (e.g., `= [[...]].Summary`)
-            let inlineSummaryRegex = "(?m)^`[^`]*\\.Summary[^`]*`$"
-            promptBody = promptBody.replacingOccurrences(
-                of: inlineSummaryRegex,
-                with: "",
-                options: String.CompareOptions.regularExpression
-            )
-            // Insert meeting summaries under each "###" heading in the prompt
-            var summaryMap: [String: String] = [:]
-            // Build SQL LIKE pattern matching files containing the date
-            let meetingPatternExpr = "%\(dateString)%"
-                for row in try connection.prepare(notesTable.filter(pathExp.like(meetingPatternExpr))) {
-                    let fileURL = URL(fileURLWithPath: row[pathExp])
-                    guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-                    // Only include files that have an existing Summary:: line
-                    guard content.contains("Summary::") else { continue }
-                    let fileName = fileURL.deletingPathExtension().lastPathComponent
-                    // Extract the first Summary:: line
-                    if let sumLine = content
-                        .components(separatedBy: "\n")
-                        .first(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("Summary::") }) {
-                        let summaryText = sumLine
-                            .replacingOccurrences(of: "^Summary::\\s*", with: "", options: .regularExpression)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        summaryMap[fileName] = summaryText
-                    }
-                }
-            let promptLines = promptBody.components(separatedBy: "\n")
-            var injected: [String] = []
-            for line in promptLines {
-                injected.append(line)
-                if line.hasPrefix("### ") {
-                    let heading = String(line.dropFirst(4))
-                    if let summary = summaryMap[heading] {
-                        injected.append("Summary:: \(summary)")
-                    }
-                }
-            }
-            promptBody = injected.joined(separator: "\n")
-            // Construct prompt
-            let systemPrompt = "You are Summit, an expert at summarizing daily notes succinctly."
-            let userPrompt = "Summarize the following daily journal for \(dateString):\n\n" + promptBody
-            // Call summarizer with spinner
-            let config = try Config.load()
-            // Ensure summarization models are configured
-            guard let sumCfg = config.summarize_model else {
-                throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
-            }
-            let primaryModel = sumCfg.primary
-            let fallbackModel = sumCfg.fallback
-            let client = OllamaClient(host: config.ollamaHostURL, model: primaryModel)
-            // Spinner thread
-            var spinning = true
-            let spinnerChars = ["|", "/", "-", "\\"]
-            let spinnerThread = Thread {
-                var idx = 0
-                while spinning {
-                    let frame = spinnerChars[idx % spinnerChars.count]
-                    fputs("\r\(frame) Summarizing daily note \(dateString)", stdout)
-                    fflush(stdout)
-                    idx += 1
-                    Thread.sleep(forTimeInterval: 0.1)
-                }
-            }
-            spinnerThread.start()
-            // Perform summarization with retry
-            let summaryText = try client.summarizeWithRetry(
-                system: systemPrompt,
-                user: userPrompt,
-                primaryModel: primaryModel,
-                fallbackModel: fallbackModel
-            )
-            // Stop spinner
-            spinning = false
-            fputs("\r", stdout)
-            // Write only the updated Summary:: line into the daily note file
-            var updatedLines = lines
-            updatedLines[sumIdx] = "Summary:: \(summaryText)"
-            let updatedText = updatedLines.joined(separator: "\n")
-            try updatedText.write(to: noteURL, atomically: true, encoding: .utf8)
-            print("✅ Updated daily note: \(noteURL.lastPathComponent)")
+            try updateMeetingNotes(in: dbConn,
+                                   for: dateString,
+                                   dailyNoteURL: noteURL,
+                                   overwrite: overwrite)
+            try updateDailySummary(at: noteURL,
+                                   in: dbConn,
+                                   for: dateString,
+                                   overwrite: overwrite)
             return
         }
-        // Render report
+
         if json {
-            var out: [String: Any] = ["date": dateString]
-            if let doc = doc {
-                out["metadata"] = doc.metadata
-                out["body"] = doc.body
-            }
-            out["tasks"] = tasks.map { ["line": $0.line, "text": $0.text, "state": ($0.state == .done ? "done" : "todo")] }
-            out["events"] = []
-            let data = try JSONSerialization.data(withJSONObject: out, options: .prettyPrinted)
-            if let str = String(data: data, encoding: .utf8) {
-                print(str)
-            }
-        } else {
-            print("# Daily Report for \(dateString)\n")
-            print("## Daily Note\n")
-            if let _ = doc {
-                // Show cleaned in-memory note (dataview/task fences and old summaries removed)
-                // Read original note text
-                let original = try String(contentsOf: noteURL, encoding: .utf8)
-                // Strip dataview/dataviewjs/task code fences
-                let fenceRegex = "(?ms)```(?:dataview|dataviewjs|task)[\\s\\S]*?```"
-                var promptBody = original.replacingOccurrences(
-                    of: fenceRegex,
-                    with: "",
-                    options: String.CompareOptions.regularExpression
-                )
-                // Strip existing Summary:: lines
-                let summaryRegex = "(?m)^Summary::.*$"
-                promptBody = promptBody.replacingOccurrences(
-                    of: summaryRegex,
-                    with: "",
-                    options: String.CompareOptions.regularExpression
-                )
-                // Strip inline dataview summary queries (e.g., `= [[...]].Summary`)
-                let inlineSummaryRegex = "(?m)^`[^`]*\\.Summary[^`]*`$"
-                promptBody = promptBody.replacingOccurrences(
-                    of: inlineSummaryRegex,
-                    with: "",
-                    options: String.CompareOptions.regularExpression
-                )
-                // Insert meeting note summaries into the cleaned prompt under each meeting heading
-                var summaryMap: [String: String] = [:]
-                let meetingPattern = "%\(dateString)%"
-                for row in try connection.prepare(notesTable.filter(pathExp.like(meetingPattern))) {
-                    let fileURL = URL(fileURLWithPath: row[pathExp])
-                    guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-                    // Only include files that have an existing Summary:: line
-                    guard content.contains("Summary::") else { continue }
-                    let fileName = fileURL.deletingPathExtension().lastPathComponent
-                    // Extract the first Summary:: line
-                    if let sumLine = content.components(separatedBy: "\n").first(where: {
-                        $0.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("Summary::")
-                    }) {
-                        // Strip leading "Summary::" and any stray occurrences
-                        var summaryText = sumLine
-                            .replacingOccurrences(of: "^Summary::\\s*", with: "", options: .regularExpression)
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        summaryText = summaryText
-                            .replacingOccurrences(of: "Summary::", with: "")
-                            .trimmingCharacters(in: .whitespacesAndNewlines)
-                        summaryMap[fileName] = summaryText
-                    }
+            let out = try renderJSON(doc: doc,
+                                     tasks: tasks,
+                                     dateString: dateString)
+            print(out)
+            return
+        }
+
+        let meetings = try loadMeetingSummaries(from: dbConn,
+                                                dateString: dateString)
+        let markdown = try renderMarkdown(doc: doc,
+                                          tasks: tasks,
+                                          meetings: meetings,
+                                          dateString: dateString,
+                                          noteURL: noteURL)
+        print(markdown)
+    }
+}
+
+// MARK: - Update Helpers
+/// Summarize and update all meeting notes for a date (skipping the daily note itself)
+func updateMeetingNotes(in db: Connection, for dateString: String, dailyNoteURL: URL, overwrite: Bool) throws {
+    let notesTable = Table("notes")
+    let pathExp = Expression<String>("path")
+    let pattern = "%\(dateString)%"
+    let query = notesTable.filter(pathExp.like(pattern))
+    let cfg = try Config.load()
+    guard let sumCfg = cfg.summarize_model else {
+        throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
+    }
+    let client = OllamaClient(host: cfg.ollamaHostURL, model: sumCfg.primary)
+    for row in try db.prepare(query) {
+        let fileURL = URL(fileURLWithPath: row[pathExp])
+        // skip the daily note itself
+        if fileURL.lastPathComponent == dailyNoteURL.lastPathComponent { continue }
+        guard let content = try? String(contentsOf: fileURL, encoding: .utf8), content.contains("Summary::") else { continue }
+        var lines = content.components(separatedBy: "\n")
+        var updated = false
+        for idx in lines.indices {
+            let orig = lines[idx]
+            let trimmed = orig.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed == "Summary::" || trimmed.hasPrefix("Summary:: ✨") || (overwrite && trimmed.hasPrefix("Summary::")) {
+                let summary = try client.summarizeWithRetry(system: "You are Summit, an expert at summarizing meeting notes. Provide a concise one-line summary.",
+                                                         user: content,
+                                                         primaryModel: sumCfg.primary,
+                                                         fallbackModel: sumCfg.fallback)
+                if let range = orig.range(of: "Summary::") {
+                    let prefix = String(orig[..<range.lowerBound])
+                    lines[idx] = "\(prefix)Summary:: \(summary)"
+                } else {
+                    lines[idx] = "Summary:: \(summary)"
                 }
-                // DEBUG: log loaded meeting summary keys
-                print("DEBUG: meeting summaries loaded for \(dateString): \(Array(summaryMap.keys))")
-                let promptLines = promptBody.components(separatedBy: "\n")
-                var finalLines: [String] = []
-                for line in promptLines {
-                    finalLines.append(line)
-                    let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    // Match headings of form "### [[FileName]]" and extract FileName
-                    if trimmed.hasPrefix("### [["),
-                       let open = trimmed.range(of: "[["),
-                       let close = trimmed.range(of: "]]", options: .backwards) {
-                        let linkContent = String(trimmed[open.upperBound..<close.lowerBound])
-                        let headingName = linkContent.components(separatedBy: "|").first ?? linkContent
-                        if let summary = summaryMap[headingName] {
-                            // Append only the summary text itself
-                            finalLines.append(summary)
-                        }
-                    }
-                }
-                let finalPrompt = finalLines.joined(separator: "\n")
-                // DEBUG: log number of summaries injected
-                let injectedCount = finalLines.count - promptLines.count
-                print("DEBUG: injected \(injectedCount) meeting summaries")
-                print(finalPrompt + "\n")
-            } else {
-                print("_No daily note found._\n")
+                updated = true
+                break
             }
-            print("## Tasks\n")
-            if tasks.isEmpty {
-                print("_No tasks found._\n")
-            } else {
-                for t in tasks {
-                    let checkbox = t.state == .done ? "[x]" : "[ ]"
-                    print("- \(checkbox) \(t.text)")
-                }
-                print("")
-            }
-            print("## Events\n")
-            print("_No events available._")
+        }
+        if updated {
+            try lines.joined(separator: "\n").write(to: fileURL, atomically: true, encoding: .utf8)
+            print("✅ Updated meeting note: \(fileURL.lastPathComponent)")
         }
     }
+}
+
+/// Summarize and update the daily note's Summary:: line
+func updateDailySummary(at noteURL: URL, in db: Connection, for dateString: String, overwrite: Bool) throws {
+    let original = try String(contentsOf: noteURL, encoding: .utf8)
+    let lines = original.components(separatedBy: "\n")
+    guard let sumIdx = lines.firstIndex(where: { $0.starts(with: "Summary::") }) else {
+        throw ValidationError("No 'Summary::' line found in daily note")
+    }
+    let rawSuffix = lines[sumIdx].dropFirst("Summary::".count)
+    let suffix = rawSuffix.trimmingCharacters(in: .whitespaces)
+    if !overwrite && !suffix.isEmpty && !suffix.lowercased().hasPrefix("needs review") {
+        print("ℹ️ Existing summary present and not marked 'Needs Review', skipping update.")
+        return
+    }
+    // Build prompt body by stripping fences and old summary
+    var body = original
+    let fenceRegex = "(?ms)```(?:dataview|dataviewjs|task)[\\s\\S]*?```"
+    body = body.replacingOccurrences(of: fenceRegex, with: "", options: .regularExpression)
+    let summaryRegex = "(?m)^Summary::.*$"
+    body = body.replacingOccurrences(of: summaryRegex, with: "", options: .regularExpression)
+    // Inject meeting summaries
+    let meetingSummaries = try loadMeetingSummaries(from: db, dateString: dateString)
+    let promptLines = body.components(separatedBy: "\n")
+    var injected: [String] = []
+    for line in promptLines {
+        injected.append(line)
+        if line.hasPrefix("### ") {
+            let heading = String(line.dropFirst(4))
+            if let sum = meetingSummaries[heading] {
+                injected.append("Summary:: \(sum)")
+            }
+        }
+    }
+    let promptBody = injected.joined(separator: "\n")
+    // Summarize daily note
+    let cfg = try Config.load()
+    guard let sumCfg = cfg.summarize_model else {
+        throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
+    }
+    let client = OllamaClient(host: cfg.ollamaHostURL, model: sumCfg.primary)
+    let summary = try client.summarizeWithRetry(system: "You are Summit, an expert at summarizing daily notes succinctly.",
+                                              user: promptBody,
+                                              primaryModel: sumCfg.primary,
+                                              fallbackModel: sumCfg.fallback)
+    // Write updated summary line
+    var outLines = lines
+    outLines[sumIdx] = "Summary:: \(summary)"
+    try outLines.joined(separator: "\n").write(to: noteURL, atomically: true, encoding: .utf8)
+    print("✅ Updated daily note: \(noteURL.lastPathComponent)")
+}
+
+/// Render JSON output for the daily report
+func renderJSON(doc: Document?, tasks: [ObsidianModel.Task], dateString: String) throws -> String {
+    var out: [String: Any] = ["date": dateString]
+    if let d = doc {
+        out["metadata"] = d.metadata
+        out["body"] = d.body
+    }
+    out["tasks"] = tasks.map { ["line": $0.line, "text": $0.text, "state": ($0.state == .done ? "done" : "todo")] }
+    let data = try JSONSerialization.data(withJSONObject: out, options: .prettyPrinted)
+    return String(data: data, encoding: .utf8) ?? ""
+}
+
+/// Render Markdown output for the daily report
+func renderMarkdown(doc: Document?, tasks: [ObsidianModel.Task], meetings: [String:String], dateString: String, noteURL: URL) throws -> String {
+    var result = "# Daily Report for \(dateString)\n\n"
+    result += "## Daily Note\n\n"
+    if let _ = doc {
+        var text = try String(contentsOf: noteURL, encoding: .utf8)
+        let fenceRegex = "(?ms)```(?:dataview|dataviewjs|task)[\\s\\S]*?```"
+        text = text.replacingOccurrences(of: fenceRegex, with: "", options: .regularExpression)
+        let summaryRegex = "(?m)^Summary::.*$"
+        text = text.replacingOccurrences(of: summaryRegex, with: "", options: .regularExpression)
+        let lines = text.components(separatedBy: "\n")
+        var final: [String] = []
+        for line in lines {
+            final.append(line)
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.hasPrefix("### [[") && trimmed.contains("]]") {
+                let open = trimmed.range(of: "[[")!.upperBound
+                let close = trimmed.range(of: "]]", options: .backwards)!.lowerBound
+                let linkContent = String(trimmed[open..<close])
+                let heading = linkContent.split(separator: "|").first.map(String.init) ?? linkContent
+                if let sum = meetings[heading] {
+                    final.append(sum)
+                }
+            }
+        }
+        result += final.joined(separator: "\n") + "\n\n"
+    } else {
+        result += "_No daily note found._\n\n"
+    }
+    result += "## Tasks\n\n"
+    if tasks.isEmpty {
+        result += "_No tasks found._\n\n"
+    } else {
+        for t in tasks {
+            let box = t.state == .done ? "[x]" : "[ ]"
+            result += "- \(box) \(t.text)\n"
+        }
+        result += "\n"
+    }
+    result += "## Events\n\n"
+    let events = loadCalendarEvents(start: ISO8601DateFormatter().date(from: dateString + "T00:00:00Z") ?? Date(),
+                                    end: ISO8601DateFormatter().date(from: dateString + "T23:59:59Z") ?? Date())
+    if events.isEmpty {
+        result += "_No events available._"
+    } else {
+        for ev in events {
+            result += "- \(ev.title) (\(ev.start) - \(ev.end))\n"
+        }
+    }
+    return result
 }
