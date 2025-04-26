@@ -19,6 +19,8 @@ struct DailySummary: ParsableCommand {
     var date: String?
     @Flag(name: .long, help: "Output raw JSON instead of markdown")
     var json: Bool = false
+    @Flag(name: [.short, .long], help: "Overwrite existing AI-generated summaries in meeting notes")
+    var overwrite: Bool = false
 
     func run() throws {
         // Determine database path
@@ -100,7 +102,9 @@ struct DailySummary: ParsableCommand {
             for idx in lines.indices {
                 let originalLine = lines[idx]
                 let trimmed = originalLine.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed == "Summary::" || trimmed == "Summary:: Needs Review" {
+                if trimmed == "Summary::"
+                    || trimmed == "Summary:: Needs Review"
+                    || (overwrite && trimmed.hasPrefix("Summary:: ✨")) {
                     let systemPrompt = "You are Summit, an expert at summarizing meeting notes. Provide a concise one-line summary."
                     // Spinner
                     var spinning = true

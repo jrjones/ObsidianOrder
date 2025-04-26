@@ -18,6 +18,8 @@ struct DailyReport: ParsableCommand {
     var json: Bool = false
     @Flag(name: [.short, .long], help: "Update meeting notes and daily page in place")
     var update: Bool = false
+    @Flag(name: [.short, .long], help: "Overwrite existing AI-generated summaries in daily and meeting notes")
+    var overwrite: Bool = false
     func run() throws {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         // Load CLI config (flag > config file > default)
@@ -132,6 +134,50 @@ struct DailyReport: ParsableCommand {
         }
         // If --update, regenerate full-day summary and inject into the daily note, then exit
         if update {
+            // Summarize and update meeting notes first (overwrite placeholders or existing AI summaries)
+            let meetingPattern = "%meeting-notes%\(dateString)%"
+            let meetingQuery = notesTable.filter(pathExp.like(meetingPattern))
+            // Load summarization models
+            let cfg = try Config.load()
+            guard let sumCfg2 = cfg.summarize_model else {
+                throw ValidationError("Missing 'summarize_model' in config; please configure primary and optional fallback")
+            }
+            let primaryModel2 = sumCfg2.primary
+            let fallbackModel2 = sumCfg2.fallback
+            let client2 = OllamaClient(host: cfg.ollamaHostURL, model: primaryModel2)
+            for row in try connection.prepare(meetingQuery) {
+                let path = row[pathExp]
+                let fileURL = URL(fileURLWithPath: path)
+                guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+                var lines = content.components(separatedBy: "\n")
+                var meetingUpdated = false
+                for idx in lines.indices {
+                    let orig = lines[idx]
+                    let trimmed = orig.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if trimmed == "Summary::" || trimmed == "Summary:: Needs Review" || (overwrite && trimmed.hasPrefix("Summary:: ✨")) {
+                        let systemPrompt2 = "You are Summit, an expert at summarizing meeting notes. Provide a concise one-line summary."
+                        let summary2 = try client2.summarizeWithRetry(
+                            system: systemPrompt2,
+                            user: content,
+                            primaryModel: primaryModel2,
+                            fallbackModel: fallbackModel2
+                        )
+                        if let range = orig.range(of: "Summary::") {
+                            let prefix = String(orig[..<range.lowerBound])
+                            lines[idx] = "\(prefix)Summary:: \(summary2)"
+                        } else {
+                            lines[idx] = "Summary:: \(summary2)"
+                        }
+                        meetingUpdated = true
+                        break
+                    }
+                }
+                if meetingUpdated {
+                    let newText = lines.joined(separator: "\n")
+                    try newText.write(to: fileURL, atomically: true, encoding: .utf8)
+                    print("✅ Updated meeting note: \(fileURL.lastPathComponent)")
+                }
+            }
             // Load original daily note
             guard let original = try? String(contentsOf: noteURL, encoding: .utf8) else {
                 print("❌ Daily note not found at \(noteURL.path)")
@@ -147,7 +193,7 @@ struct DailyReport: ParsableCommand {
             let suffix = rawSuffix.trimmingCharacters(in: .whitespaces)
             let lowerSuffix = suffix.lowercased()
             // Only proceed if empty or marked 'Needs Review' (with or without trailing period)
-            guard suffix.isEmpty || lowerSuffix.hasPrefix("needs review") else {
+            guard overwrite || suffix.isEmpty || lowerSuffix.hasPrefix("needs review") else {
                 print("ℹ️ Existing summary present and not marked 'Needs Review', skipping update.")
                 throw ExitCode(0)
             }
