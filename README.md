@@ -3,7 +3,7 @@
 ![CI](https://github.com/jrjones/ObsidianOrder/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/jrjones/ObsidianOrder/branch/main/graph/badge.svg)](https://codecov.io/gh/jrjones/ObsidianOrder)
 --->
-![support/oo-logo.png](support/oo-logo.png)
+<img src="./support/oo-logo.webp" width="150" align="right">
 `obs` is a headless CLI agent for indexing and reporting on your Obsidian vault.
 
 ## Requirements
