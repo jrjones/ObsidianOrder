@@ -4,7 +4,7 @@
 [![codecov](https://codecov.io/gh/jrjones/ObsidianOrder/branch/main/graph/badge.svg)](https://codecov.io/gh/jrjones/ObsidianOrder)
 --->
 <img src="./support/oo-logo.webp" width="150" align="right">
-`obs` is a headless CLI agent for indexing and reporting on your Obsidian vault.
+`obs` is a headless CLI agent for indexing and reporting on your [Obsidian.md](https://obsidian.md) vault.
 
 ## Requirements
 - Swift 6
@@ -23,17 +23,17 @@ Replace `obs` with the built binary at `.build/release/obs` or install to `/usr/
 ```bash
 .build/release/obs index --vault ~/Obsidian --db ~/.obsidian-order/state.sqlite
 ```
-Defaults: `--vault ~/Obsidian`, `--db ~/.obsidian-order/state.sqlite`.
+Defaults: `--vault (from config) `--db (from config).
 
-You can also set these in a config file at `~/.config/obsidian-order/config.yaml`:
 ```yaml
 vault: /path/to/Obsidian      # default vault path
 db:    /path/to/state.sqlite  # default database path
 ```
+(See sample config file at [/support/config.yaml](support/config.yaml))
 
 ### Daily Report
 ```bash
-.build/release/obs daily-report [--json]
+.build/release/obs daily-report [--json] [-uo] 2025-01-01 
 ```
   
 ### Agenda
