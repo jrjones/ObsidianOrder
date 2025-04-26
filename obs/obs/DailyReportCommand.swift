@@ -13,7 +13,7 @@ private struct CLIConfig: Decodable {
 }
 
 /// Resolve vault and DB paths (flag > config file > default)
-private func resolvePaths(flagVault: String?, flagDb: String?) -> (vaultPath: String, dbPath: String) {
+func resolvePaths(flagVault: String?, flagDb: String?) -> (vaultPath: String, dbPath: String) {
     let home = FileManager.default.homeDirectoryForCurrentUser.path
     // Load YAML config
     let configPath = "\(home)/.config/obsidian-order/config.yaml"
@@ -52,7 +52,7 @@ private func resolvePaths(flagVault: String?, flagDb: String?) -> (vaultPath: St
 }
 
 /// Parse and validate date string (YYYY-MM-DD) or default to today
-private func resolveDate(input: String?) throws -> String {
+func resolveDate(input: String?) throws -> String {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyy-MM-dd"
     if let d = input {
@@ -65,7 +65,7 @@ private func resolveDate(input: String?) throws -> String {
 }
 
 /// Locate the daily note URL for a given date
-private func locateDailyNote(vaultPath: String, dateString: String) -> URL {
+func locateDailyNote(vaultPath: String, dateString: String) -> URL {
     let filename = "\(dateString).md"
     let dailyDir = URL(fileURLWithPath: vaultPath).appendingPathComponent("daily")
     let candidate = dailyDir.appendingPathComponent(filename)
@@ -86,14 +86,14 @@ private func locateDailyNote(vaultPath: String, dateString: String) -> URL {
 // MARK: - End Helpers
 // MARK: - Data Loaders
 /// Load and parse the daily note document at the given URL
-private func loadDailyDoc(at url: URL) throws -> Document? {
+func loadDailyDoc(at url: URL) throws -> Document? {
     guard FileManager.default.fileExists(atPath: url.path) else { return nil }
     let text = try String(contentsOf: url)
     return try ObsidianModel.parseDocument(text)
 }
 
 /// Load tasks for the daily note from the SQLite database
-private func loadTasks(from db: Connection, noteURL: URL) throws -> [ObsidianModel.Task] {
+func loadTasks(from db: Connection, noteURL: URL) throws -> [ObsidianModel.Task] {
     let notesTable = Table("notes")
     let tasksTable = Table("tasks")
     let idExp = Expression<Int64>("id")
@@ -117,7 +117,7 @@ private func loadTasks(from db: Connection, noteURL: URL) throws -> [ObsidianMod
 }
 
 /// Load existing meeting summaries (fileName -> summaryText) for the given date
-private func loadMeetingSummaries(from db: Connection, dateString: String) throws -> [String:String] {
+func loadMeetingSummaries(from db: Connection, dateString: String) throws -> [String:String] {
     let notesTable = Table("notes")
     let pathExp = Expression<String>("path")
     let pattern = "%\(dateString)%"
@@ -142,7 +142,7 @@ private func loadMeetingSummaries(from db: Connection, dateString: String) throw
 }
 
 /// Fetch calendar events between start and end dates (fallback if no meetings)
-private func loadCalendarEvents(start: Date, end: Date) -> [GraphEvent] {
+func loadCalendarEvents(start: Date, end: Date) -> [GraphEvent] {
     do {
         return try GraphClient().fetchEvents(start: start, end: end)
     } catch {
@@ -167,93 +167,16 @@ struct DailyReport: ParsableCommand {
     @Flag(name: [.short, .long], help: "Overwrite existing AI-generated summaries in daily and meeting notes")
     var overwrite: Bool = false
     func run() throws {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        // Load CLI config (flag > config file > default)
-        struct CLIConfig: Decodable { var vault: String?; var db: String? }
-        let configPath = "\(home)/.config/obsidian-order/config.yaml"
-        var config = CLIConfig(vault: nil, db: nil)
-        if FileManager.default.fileExists(atPath: configPath) {
-            do {
-                let yamlText = try String(contentsOfFile: configPath)
-                config = try YAMLDecoder().decode(CLIConfig.self, from: yamlText)
-            } catch {
-                print("Warning: failed to parse config at \(configPath): \(error)")
-            }
-        }
-        // Determine vault path: flag > config > default
-        let defaultVault = "\(home)/Obsidian"
-        let flagVault = vault.map { NSString(string: $0).expandingTildeInPath }
-        let configVault = config.vault.map { NSString(string: $0).expandingTildeInPath }
-        let vaultPath: String
-        if let v = flagVault {
-            vaultPath = v
-        } else if let cv = configVault, FileManager.default.fileExists(atPath: cv) {
-            vaultPath = cv
-        } else {
-            if config.vault != nil {
-                print("Warning: config vault path not found at \(config.vault!), using default \(defaultVault).")
-            }
-            vaultPath = defaultVault
-        }
-        // Determine db path: flag > config > default
-        let defaultDb = "\(home)/.obsidian-order/state.sqlite"
-        let flagDb = db.map { NSString(string: $0).expandingTildeInPath }
-        let configDb = config.db.map { NSString(string: $0).expandingTildeInPath }
-        let dbPath: String
-        if let d = flagDb {
-            dbPath = d
-        } else if let cd = configDb {
-            dbPath = cd
-        } else {
-            dbPath = defaultDb
-        }
-        // Print used paths
+        // Paths, date, and initial data
+        let (vaultPath, dbPath) = resolvePaths(flagVault: vault, flagDb: db)
         print("Using vault path: \(vaultPath)")
         print("Using DB path:    \(dbPath)")
-        // Determine target date (default: today)
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateString: String
-        if let input = date {
-            // Validate provided date
-            guard dateFormatter.date(from: input) != nil else {
-                throw ValidationError("Invalid date format: \(input). Expected YYYY-MM-DD.")
-            }
-            dateString = input
-        } else {
-            dateString = dateFormatter.string(from: Date())
-        }
-        // Locate daily note under ~/Obsidian/daily/ (or year subfolders), or fallback to vault root
-        let fm = FileManager.default
-        let noteFilename = "\(dateString).md"
-        let dailyDirURL = URL(fileURLWithPath: vaultPath).appendingPathComponent("daily")
-        // Candidate URL: direct child
-        let candidate1 = dailyDirURL.appendingPathComponent(noteFilename)
-        // Recursive search under dailyDirURL
-        let noteURL: URL = {
-            if fm.fileExists(atPath: candidate1.path) {
-                return candidate1
-            }
-            if let enumerator = fm.enumerator(at: dailyDirURL,
-                                               includingPropertiesForKeys: nil,
-                                               options: [.skipsHiddenFiles, .skipsPackageDescendants]) {
-                for case let url as URL in enumerator {
-                    if url.lastPathComponent == noteFilename {
-                        return url
-                    }
-                }
-            }
-            // Fallback to vault root
-            return URL(fileURLWithPath: vaultPath).appendingPathComponent(noteFilename)
-        }()
-        // Load daily note document
+        let dateString = try resolveDate(input: date)
+        let noteURL = locateDailyNote(vaultPath: vaultPath, dateString: dateString)
         let doc = try loadDailyDoc(at: noteURL)
-        // Open database connection
         let connection = try Connection(dbPath)
-        // Prepare for meeting-note lookups
         let notesTable = Table("notes")
         let pathExp = Expression<String>("path")
-        // Load tasks from DB
         let tasks = try loadTasks(from: connection, noteURL: noteURL)
         // If --update: regenerate summaries in both meeting notes and daily note
         if update {
@@ -270,6 +193,8 @@ struct DailyReport: ParsableCommand {
             let client2 = OllamaClient(host: cfg.ollamaHostURL, model: primaryModel2)
             for row in try connection.prepare(meetingQuery) {
                 let fileURL = URL(fileURLWithPath: row[pathExp])
+                // skip the daily note itself so we only update actual meeting notes
+                if fileURL.lastPathComponent == noteURL.lastPathComponent { continue }
                 guard let content = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
                 // Only update meeting notes that already contain a Summary:: placeholder
                 guard content.contains("Summary::") else { continue }

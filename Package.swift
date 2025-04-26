@@ -79,5 +79,16 @@ let package = Package(
             dependencies: ["VaultIndex"],
             path: "Tests/VaultIndexTests"
         ),
+        .testTarget(
+            name: "ObsTests",
+            dependencies: [
+                "obs",
+                "ObsidianModel",
+                "GraphClient",
+                .product(name: "SQLite", package: "SQLite.swift"),
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            path: "Tests/ObsTests"
+        ),
     ]
 )
