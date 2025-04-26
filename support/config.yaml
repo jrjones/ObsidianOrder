@@ -1,25 +1,25 @@
 # ~/.config/obsidian-order/config.yaml
 
-        # Path to your Obsidian vault (overridden by --vault flag if provided)
-        vault: /Users/jrj/jrjOS
-        # Path to your SQLite state DB (overridden by --db flag if provided)
-        db: /Users/jrj/.obsidian-order/state.sqlite
+# Path to your Obsidian vault (overridden by --vault flag if provided)
+vault: /Users/jrj/jrjOS
+# Path to your SQLite state DB (overridden by --db flag if provided)
+db: /Users/jrj/.obsidian-order/state.sqlite
 
-        # — Below are Phase 2 settings; they’ll be picked up by
-        #   embed/ask/daily-summary once implemented —
+# — Below are Phase 2 settings; they’ll be picked up by
+#   embed/ask/daily-summary once implemented —
 
-        # Which embedding model to use
-        embedding_model: ollama/nomic-embed-text
+# Which embedding model to use
+embedding_model: ollama/nomic-embed-text
 
-        # Which LLMs to use for summarisation
-        summarize_model:
-          primary: ollama/llama3:70b
-          fallback: openai/gpt-4o
+# Which LLMs to use for summarisation
+summarize_model:
+  primary: ollama/llama3:70b
+  fallback: openai/gpt-4o
 
-        # Local Ollama API endpoints (per machine)
-        ollama_hosts:
-          mac: http://ultron.jrj.io:11434
-          pc:  http://gunter.jrj.io:11434
+# Local Ollama API endpoints (per machine)
+ollama_hosts:
+  mac: http://ultron.jrj.io:11434
+  pc:  http://gunter.jrj.io:11434
 
-        # Max USD/day you’re willing to spend on remote API calls
-        cloud_budget_usd_per_day: 1.00
+# Max USD/day you’re willing to spend on remote API calls
+cloud_budget_usd_per_day: 1.00

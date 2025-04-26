@@ -50,13 +50,32 @@ struct Embed: ParsableCommand {
         let modifiedExp = Expression<Double>("modified")
         let lastEmbExp = Expression<Double?>("last_embedded")
 
-        // Build filter: never embedded, or modified since last_embedded
-        var filter = lastEmbExp == nil || modifiedExp > lastEmbExp
-        if let since = since, let sinceDate = ISO8601DateFormatter().date(from: since) {
-            let sinceTS = sinceDate.timeIntervalSince1970
-            filter = filter && modifiedExp > sinceTS
+        // Build filter: use --since if provided, else incremental since last_embedded
+        // Use Expression<Bool?> to handle optional comparators
+        let filter: SQLite.Expression<Bool?>
+        if let sinceStr = since {
+            // Parse ISO8601 timestamp, falling back to plain yyyy-MM-dd
+            let isoFormatter = ISO8601DateFormatter()
+            isoFormatter.formatOptions = [.withInternetDateTime, .withFullDate]
+            var sinceDate = isoFormatter.date(from: sinceStr)
+            if sinceDate == nil {
+                let df = DateFormatter()
+                df.locale = Locale(identifier: "en_US_POSIX")
+                df.dateFormat = "yyyy-MM-dd"
+                df.timeZone = TimeZone.current
+                sinceDate = df.date(from: sinceStr)
+            }
+            guard let sinceDateUnwrapped = sinceDate else {
+                throw ValidationError("Invalid --since timestamp: \(sinceStr)")
+            }
+            let sinceTS = sinceDateUnwrapped.timeIntervalSince1970
+            // Embed notes modified since given timestamp
+            // Compare as optional to unify with default optional filter type
+            filter = SQLite.Expression<Double?>(modifiedExp) > sinceTS
+        } else {
+            // Default: never embedded or modified since last_embedded
+            filter = lastEmbExp == nil || modifiedExp > lastEmbExp
         }
-
         let toEmbed = notes.filter(filter)
         // Determine Ollama host and model
         let hostString = host ?? config.ollamaHostURL.absoluteString

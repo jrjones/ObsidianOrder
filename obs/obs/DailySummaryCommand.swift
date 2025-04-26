@@ -89,14 +89,16 @@ struct DailySummary: ParsableCommand {
         let fallbackModel = sumCfg.fallback
         let client = OllamaClient(host: hostURL, model: primaryModel)
         var meetingSummaries: [(title: String, summary: String, tasks: [ObsidianModel.Task])] = []
-        // Query meeting notes from database by path pattern matching the meeting-notes folder and date
-        let pattern = "%meeting-notes%\(dateString)%"
+        // Query meeting notes: match files containing the date, then filter by meeting header in content
+        let pattern = "%\(dateString)%"
         let meetingQuery = notesTable.filter(pathExp.like(pattern))
         for row in try conn.prepare(meetingQuery) {
             let title = row[titleExp]
             let path = row[pathExp]
             let fileURL = URL(fileURLWithPath: path)
             let content = try String(contentsOf: fileURL)
+            // Only process meeting notes that contain a Summary:: placeholder
+            guard content.contains("Summary::") else { continue }
             var lines = content.components(separatedBy: "\n")
             var updated = false
             for idx in lines.indices {
