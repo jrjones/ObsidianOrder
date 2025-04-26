@@ -12,3 +12,7 @@
 
 # Xcode Derived Data
 DerivedData/
+
+# tmp folders
+*/tmp/
+*/.tmp/
